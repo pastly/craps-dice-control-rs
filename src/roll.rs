@@ -34,6 +34,14 @@ impl Roll {
     pub fn value(&self) -> u8 {
         self.dice[0] + self.dice[1]
     }
+
+    pub fn dice(&self) -> &[u8; 2] {
+        &self.dice
+    }
+
+    pub fn is_hard(&self) -> bool {
+        return self.dice[0] != 1 && self.dice[0] != 6 && self.dice[0] == self.dice[1];
+    }
 }
 
 #[cfg(test)]
@@ -41,16 +49,24 @@ mod tests {
     use super::Roll;
     use super::RollError;
 
-    #[test]
-    fn new_ok() {
+    fn all_pairs() -> Vec<(u8, u8)> {
+        let mut v = vec![];
         for d1 in [1, 2, 3, 4, 5, 6].iter() {
             for d2 in [1, 2, 3, 4, 5, 6].iter() {
-                let r = Roll::new([*d1, *d2]);
-                assert!(r.is_ok());
-                let r = r.unwrap();
-                assert_eq!(r.dice[0], *d1);
-                assert_eq!(r.dice[1], *d2);
+                v.push((*d1, *d2));
             }
+        }
+        v
+    }
+
+    #[test]
+    fn new_ok() {
+        for (d1, d2) in all_pairs() {
+            let r = Roll::new([d1, d2]);
+            assert!(r.is_ok());
+            let r = r.unwrap();
+            assert_eq!(r.dice[0], d1);
+            assert_eq!(r.dice[1], d2);
         }
     }
 
@@ -71,6 +87,23 @@ mod tests {
             match r {
                 RollError::OutOfRange(_) => {} //_ => panic!("should have been out of range")
             }
+        }
+    }
+
+    #[test]
+    fn hard() {
+        for (d1, d2) in all_pairs() {
+            let hard = d1 == d2 && d1 != 1 && d1 != 6;
+            let r = Roll::new([d1, d2]).unwrap();
+            assert_eq!(r.is_hard(), hard);
+        }
+    }
+
+    #[test]
+    fn value() {
+        for (d1, d2) in all_pairs() {
+            let r = Roll::new([d1, d2]).unwrap();
+            assert_eq!(r.value(), d1 + d2);
         }
     }
 }
