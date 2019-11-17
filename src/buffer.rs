@@ -19,7 +19,7 @@ where
     /// amount of bytes we have read from the lower layer already. If this ends up being the case,
     /// .read() stores a non-zero value here so .next() can be signaled to not overwrite data at
     /// the very beginning of the working buffer.
-    bytes_remaining_from_last_read: usize,
+    unconsumed_bytes: usize,
 }
 
 impl<T> StreamIterCommon<T>
@@ -30,7 +30,7 @@ where
         Self {
             source,
             working_buf: [0; BUF_SIZE],
-            bytes_remaining_from_last_read: 0,
+            unconsumed_bytes: 0,
         }
     }
 }
@@ -76,7 +76,7 @@ macro_rules! impl_read_trait_for_stream_iter {
         {
             fn read(&mut self, out_buf: &mut [u8]) -> io::Result<usize> {
                 let mut bytes_given = 0;
-                if self.common.bytes_remaining_from_last_read >= out_buf.len() {
+                if self.common.unconsumed_bytes >= out_buf.len() {
                     // We have more data already buffered than the user wants to read.
                     // 1. Copy to them the max amount of data
                     // 2. Update our buffer so that it starts with the buffered bytes
@@ -88,8 +88,8 @@ macro_rules! impl_read_trait_for_stream_iter {
                     out_buf[..out_buf_len].copy_from_slice(&self.common.working_buf[..out_buf_len]);
                     self.common
                         .working_buf
-                        .copy_within(out_buf_len..self.common.bytes_remaining_from_last_read, 0);
-                    self.common.bytes_remaining_from_last_read -= out_buf_len;
+                        .copy_within(out_buf_len..self.common.unconsumed_bytes, 0);
+                    self.common.unconsumed_bytes -= out_buf_len;
                     return Ok(out_buf.len());
                 } else {
                     // We have less data already buffered than what the user wants to read.
@@ -97,12 +97,12 @@ macro_rules! impl_read_trait_for_stream_iter {
                     // 2. Update the length of our buffer to be zero.
                     // 3. Note that we've given them some bytes.
                     // Continue with this function. We might be able to give them more.
-                    out_buf[..self.common.bytes_remaining_from_last_read]
-                        .copy_from_slice(&self.common.working_buf[..self.common.bytes_remaining_from_last_read]);
-                    bytes_given += self.common.bytes_remaining_from_last_read;
-                    self.common.bytes_remaining_from_last_read = 0;
+                    out_buf[..self.common.unconsumed_bytes]
+                        .copy_from_slice(&self.common.working_buf[..self.common.unconsumed_bytes]);
+                    bytes_given += self.common.unconsumed_bytes;
+                    self.common.unconsumed_bytes = 0;
                 }
-                assert_eq!(self.common.bytes_remaining_from_last_read, 0);
+                assert_eq!(self.common.unconsumed_bytes, 0);
                 // If we're here, then we must need to read some more bytes and give
                 // them to the out_buf. First try to read more.
                 match self.next() {
@@ -131,7 +131,7 @@ macro_rules! impl_read_trait_for_stream_iter {
                                     self.common
                                         .working_buf
                                         .copy_within(max_bytes_to_give..working_buf_len, 0);
-                                    self.common.bytes_remaining_from_last_read = working_buf_len - max_bytes_to_give;
+                                    self.common.unconsumed_bytes = working_buf_len - max_bytes_to_give;
                                     bytes_given += max_bytes_to_give;
                                     return Ok(bytes_given);
                                 } else {
@@ -186,7 +186,7 @@ where
     type Item = io::Result<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut read_previously = self.common.bytes_remaining_from_last_read;
+        let mut read_previously = self.common.unconsumed_bytes;
         // keep looping until we get an error, fail to read any bytes, or have
         // read a full buffer
         loop {
@@ -257,7 +257,7 @@ where
     type Item = io::Result<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut read_previously = self.common.bytes_remaining_from_last_read;
+        let mut read_previously = self.common.unconsumed_bytes;
         // keep looping until we get an error, fail to read any bytes, or have
         // read a full buffer
         loop {
@@ -362,7 +362,7 @@ where
     type Item = io::Result<usize>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut read_previously = self.common.bytes_remaining_from_last_read;
+        let mut read_previously = self.common.unconsumed_bytes;
         // keep looping until we get an error, fail to read any bytes, or have
         // read a full buffer
         loop {
