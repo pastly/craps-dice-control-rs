@@ -1,26 +1,27 @@
 use cdc2::buffer::CharWhitelistIter;
+use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
 use std::io::{self, Read};
 
-struct RollGen<R>
+struct RollReader<R>
 where
     R: Read,
 {
     input: CharWhitelistIter<R>,
 }
 
-impl<R> RollGen<R>
+impl<R> RollReader<R>
 where
     R: Read,
 {
     fn new(input: R) -> Self {
-        RollGen {
+        RollReader {
             input: CharWhitelistIter::new(input, "123456"),
         }
     }
 }
 
-impl<R> Iterator for RollGen<R>
+impl<R> Iterator for RollReader<R>
 where
     R: Read,
 {
@@ -45,24 +46,43 @@ where
     }
 }
 
-fn weights_from_roll_iter<I>(rolls: I) -> [u64; 11]
+fn die_weights_from_roll_iter<I>(rolls: I) -> ([u64; 6], [u64; 6])
 where
     I: Iterator<Item = Roll>,
 {
-    let mut weights = [0; 11];
+    let mut d1 = [0; 6];
+    let mut d2 = [0; 6];
     for r in rolls {
-        weights[r.value() as usize - 2] += 1;
+        d1[r.dice()[0] as usize - 1] += 1;
+        d2[r.dice()[1] as usize - 1] += 1;
     }
-    weights
+    (d1, d2)
 }
 
+//fn roll_weights_from_roll_iter<I>(rolls: I) -> [u64; 11]
+//where
+//    I: Iterator<Item = Roll>,
+//{
+//    let mut weights = [0; 11];
+//    for r in rolls {
+//        weights[r.value() as usize - 2] += 1;
+//    }
+//    weights
+//}
+
 fn main() {
-    //let r = Roll::new([1, 2]);
-    //println!("{:?}", r);
-    let weights = weights_from_roll_iter(RollGen::new(io::stdin()));
-    let sum: u64 = weights.iter().sum();
-    println!("{:?}", weights);
-    for w in weights.iter() {
-        println!("{:?} %", *w as f64 * 100.0 / sum as f64);
+    let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
+    //println!("{:?}", d1);
+    //println!("{:?}", d2);
+    //println!("---------");
+    let roll_gen = DieWeights::new_weights2(d1, d2);
+    //for _ in 0..10 {
+    //    let r = roll_gen.gen();
+    //    println!("{:?}", r);
+    //}
+    //println!("---------");
+    for r in roll_gen.take(100000) {
+        println!("{:?}", r);
     }
+    //println!("{:?}", roll_gen.take(4).collect::<Vec<Roll>>());
 }
