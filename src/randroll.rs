@@ -1,11 +1,25 @@
 use crate::roll::Roll;
-use rand::distributions::weighted::WeightedIndex;
+use rand::distributions::weighted::alias_method::WeightedIndex;
 use rand::distributions::Distribution;
 use rand::{thread_rng, Rng};
 
-trait RollGen {
+pub trait RollGen {
     fn gen(&self) -> Roll;
 }
+
+macro_rules! impl_iterator {
+    ($MyType:ty) => {
+        impl Iterator for $MyType {
+            type Item = Roll;
+            fn next(&mut self) -> Option<Self::Item> {
+                Some(self.gen())
+            }
+        }
+    };
+}
+
+impl_iterator!(DieWeights);
+impl_iterator!(RollWeights);
 
 #[derive(Debug)]
 pub struct DieWeights {
@@ -14,21 +28,21 @@ pub struct DieWeights {
 }
 
 impl DieWeights {
-    fn new_fair() -> Self {
+    pub fn new_fair() -> Self {
         DieWeights::new_weights([1; 6])
     }
 
-    fn new_weights(w: [u64; 6]) -> Self {
-        let w = WeightedIndex::new(&w).unwrap();
+    pub fn new_weights(w: [u64; 6]) -> Self {
+        let w = WeightedIndex::new(w.to_vec()).unwrap();
         DieWeights {
             d1: w.clone(),
             d2: w,
         }
     }
 
-    fn new_weights2(w1: [u64; 6], w2: [u64; 6]) -> Self {
-        let w1 = WeightedIndex::new(&w1).unwrap();
-        let w2 = WeightedIndex::new(&w2).unwrap();
+    pub fn new_weights2(w1: [u64; 6], w2: [u64; 6]) -> Self {
+        let w1 = WeightedIndex::new(w1.to_vec()).unwrap();
+        let w2 = WeightedIndex::new(w2.to_vec()).unwrap();
         DieWeights { d1: w1, d2: w2 }
     }
 }
@@ -49,12 +63,12 @@ pub struct RollWeights {
 }
 
 impl RollWeights {
-    fn new_fair() -> Self {
+    pub fn new_fair() -> Self {
         RollWeights::new_weights([1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1])
     }
 
-    fn new_weights(w: [u64; 11]) -> Self {
-        let d = WeightedIndex::new(&w).unwrap();
+    pub fn new_weights(w: [u64; 11]) -> Self {
+        let d = WeightedIndex::new(w.to_vec()).unwrap();
         RollWeights { d }
     }
 }
