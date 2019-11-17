@@ -692,8 +692,7 @@ mod test_space_strip_iter {
 
 #[cfg(test)]
 mod test_char_whitelist_iter {
-    use super::{CharWhitelistIter, BUF_SIZE};
-    use std::io::Read;
+    use super::CharWhitelistIter;
 
     #[test]
     fn empty_whitelist() {
