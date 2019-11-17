@@ -81,7 +81,7 @@ fn main() {
     //    println!("{:?}", r);
     //}
     //println!("---------");
-    for r in roll_gen.take(100000) {
+    for r in roll_gen.take(100_000) {
         println!("{:?}", r);
     }
     //println!("{:?}", roll_gen.take(4).collect::<Vec<Roll>>());

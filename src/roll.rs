@@ -40,7 +40,7 @@ impl Roll {
     }
 
     pub fn is_hard(&self) -> bool {
-        return self.dice[0] != 1 && self.dice[0] != 6 && self.dice[0] == self.dice[1];
+        self.dice[0] != 1 && self.dice[0] != 6 && self.dice[0] == self.dice[1]
     }
 }
 
