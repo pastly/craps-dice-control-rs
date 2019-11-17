@@ -39,6 +39,7 @@ where
 /// more data. The hard work that each type actually performs (ex:
 /// CommentStripIter strips out comments) is located in their .next(), meaning
 /// this can be generalized.
+#[cfg(test)]
 macro_rules! impl_my_collect_for_stream_iter {
     () => {
         /// Read all data from the source into a big buffer and return it as a vector
@@ -131,7 +132,8 @@ macro_rules! impl_read_trait_for_stream_iter {
                                     self.common
                                         .working_buf
                                         .copy_within(max_bytes_to_give..working_buf_len, 0);
-                                    self.common.unconsumed_bytes = working_buf_len - max_bytes_to_give;
+                                    self.common.unconsumed_bytes =
+                                        working_buf_len - max_bytes_to_give;
                                     bytes_given += max_bytes_to_give;
                                     return Ok(bytes_given);
                                 } else {

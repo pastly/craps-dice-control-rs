@@ -30,6 +30,10 @@ impl Roll {
             Ok(Roll { dice })
         }
     }
+
+    pub fn value(&self) -> u8 {
+        self.dice[0] + self.dice[1]
+    }
 }
 
 #[cfg(test)]
@@ -58,16 +62,14 @@ mod tests {
             assert!(r.is_err());
             let r = r.unwrap_err();
             match r {
-                RollError::OutOfRange(_) => {}
-                //_ => panic!("should have been out of range")
+                RollError::OutOfRange(_) => {} //_ => panic!("should have been out of range")
             }
             // bad die is second
             let r = Roll::new([1, *d1]);
             assert!(r.is_err());
             let r = r.unwrap_err();
             match r {
-                RollError::OutOfRange(_) => {}
-                //_ => panic!("should have been out of range")
+                RollError::OutOfRange(_) => {} //_ => panic!("should have been out of range")
             }
         }
     }
