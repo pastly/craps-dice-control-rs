@@ -15,7 +15,7 @@ impl fmt::Display for RollError {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub struct Roll {
     dice: [u8; 2],
 }
