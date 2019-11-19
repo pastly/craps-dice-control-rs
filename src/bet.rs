@@ -1,3 +1,5 @@
+use crate::roll::Roll;
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Bet {
     pub bet_type: BetType,
@@ -22,6 +24,12 @@ pub enum BetType {
     Field,
 }
 
+const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
+const FIELD_TRIP_2: bool = false;
+const FIELD_TRIP_12: bool = false;
+const FIELD_DOUB_11: bool = false;
+const BUY_PAY_UPFRONT: bool = true;
+const LAY_PAY_UPFRONT: bool = true;
 static POINT_NUMS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 
 impl Bet {
@@ -123,6 +131,161 @@ impl Bet {
             //BetType::Buy => Bet::_set_point(bet, point),
             //BetType::Lay => Bet::_set_point(bet, point),
             _ => panic!("Cannot set point on bet type {:?}", bet.bet_type),
+        }
+    }
+
+    pub fn wins_with(self, r: &Roll) -> bool {
+        if !self.working {
+            return false;
+        }
+        match self.bet_type {
+            BetType::Pass | BetType::Come => {
+                if self.point.is_none() && [7, 11].contains(&r.value()) {
+                    // if no point, wins on 7 11
+                    true
+                } else if let Some(p) = self.point {
+                    // if point, wins on point rolled
+                    r.value() == p
+                } else {
+                    // else doesn't win
+                    false
+                }
+            }
+            BetType::PassOdds | BetType::ComeOdds | BetType::Place | BetType::Buy => {
+                assert!(self.point.is_some());
+                // wins on point
+                r.value() == self.point.unwrap()
+            }
+            BetType::DontPass | BetType::DontCome => {
+                if self.point.is_none() && [2, 3].contains(&r.value()) {
+                    // if no point, wins on 2 3
+                    true
+                } else if self.point.is_some() {
+                    // if point, wins on 7
+                    r.value() == 7
+                } else {
+                    // else doesn't win
+                    false
+                }
+            }
+            BetType::DontPassOdds | BetType::DontComeOdds | BetType::Lay => {
+                assert!(self.point.is_some());
+                r.value() == 7
+            }
+            BetType::Field => FIELD_NUMS.contains(&r.value()),
+        }
+    }
+
+    pub fn loses_with(self, r: &Roll) -> bool {
+        if !self.working {
+            return false;
+        }
+        match self.bet_type {
+            BetType::Pass | BetType::Come => {
+                if self.point.is_none() && [2, 3, 12].contains(&r.value()) {
+                    // if no point, loses on 2 3 12
+                    true
+                } else if self.point.is_some() {
+                    // else if point, loses on 7
+                    r.value() == 7
+                } else {
+                    // else doesn't lose
+                    false
+                }
+            }
+            BetType::PassOdds | BetType::ComeOdds | BetType::Place | BetType::Buy => {
+                assert!(self.point.is_some());
+                // loses on 7
+                r.value() == 7
+            }
+            BetType::DontPass | BetType::DontCome => {
+                if self.point.is_none() && [7, 11].contains(&r.value()) {
+                    // if no point, loses on 7 11
+                    true
+                } else if let Some(p) = self.point {
+                    // else if point, loses on roll == point
+                    r.value() == p
+                } else {
+                    // else doesn't lose
+                    false
+                }
+            }
+            BetType::DontPassOdds | BetType::DontComeOdds => {
+                assert!(self.point.is_some());
+                // loses on point
+                r.value() == self.point.unwrap()
+            }
+            BetType::Field => !FIELD_NUMS.contains(&r.value()),
+            BetType::Lay => {
+                assert!(self.point.is_some());
+                // loses on point
+                r.value() == self.point.unwrap()
+            } //_ => {
+              //    panic!("unimpl losess_with(roll) for this bet type")
+              //}
+        }
+    }
+
+    pub fn win_amount(self, r: &Roll) -> u32 {
+        match self.bet_type {
+            BetType::Pass | BetType::Come | BetType::DontPass | BetType::DontCome => self.amount,
+            BetType::Field => match r.value() {
+                2 => self.amount * if FIELD_TRIP_2 { 3 } else { 2 },
+                11 => self.amount * if FIELD_DOUB_11 { 2 } else { 1 },
+                12 => self.amount * if FIELD_TRIP_12 { 3 } else { 2 },
+                _ => self.amount,
+            },
+            BetType::PassOdds | BetType::ComeOdds => {
+                assert!(self.point.is_some());
+                match self.point.unwrap() {
+                    4 | 10 => self.amount * 2,
+                    5 | 9 => self.amount * 3 / 2,
+                    6 | 8 => self.amount * 6 / 5,
+                    _ => panic!("Illegal point value"),
+                }
+            }
+            BetType::DontPassOdds | BetType::DontComeOdds => {
+                assert!(self.point.is_some());
+                match self.point.unwrap() {
+                    4 | 10 => self.amount / 2,
+                    5 | 9 => self.amount * 2 / 3,
+                    6 | 8 => self.amount * 5 / 6,
+                    _ => panic!("Illegal point value"),
+                }
+            }
+            BetType::Place => {
+                assert!(self.point.is_some());
+                match self.point.unwrap() {
+                    4 | 10 => self.amount * 9 / 5,
+                    5 | 9 => self.amount * 7 / 5,
+                    6 | 8 => self.amount * 7 / 6,
+                    _ => panic!("Illegal point value"),
+                }
+            }
+            BetType::Buy => {
+                assert!(self.point.is_some());
+                let vig = if BUY_PAY_UPFRONT {
+                    0
+                } else {
+                    self.amount * 5 / 100
+                };
+                match self.point.unwrap() {
+                    4 | 10 => self.amount * 2 - vig,
+                    5 | 9 => self.amount * 3 / 2 - vig,
+                    6 | 8 => self.amount * 6 / 5 - vig,
+                    _ => panic!("Illegal point value"),
+                }
+            }
+            BetType::Lay => {
+                assert!(self.point.is_some());
+                let win = match self.point.unwrap() {
+                    4 | 10 => self.amount / 2,
+                    5 | 9 => self.amount * 2 / 3,
+                    6 | 8 => self.amount * 5 / 6,
+                    _ => panic!("Illegal point value"),
+                };
+                win - if LAY_PAY_UPFRONT { 0 } else { win * 5 / 100 }
+            }
         }
     }
 

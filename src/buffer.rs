@@ -198,7 +198,7 @@ where
                 .read(&mut self.common.working_buf[read_previously..]);
             // return the error if there is one
             if let Err(e) = read_this_time {
-                return Some(Err(e))
+                return Some(Err(e));
             }
             let read_this_time = read_this_time.unwrap();
             // if we didn't read anything, time to stop looping
@@ -269,7 +269,7 @@ where
                 .read(&mut self.common.working_buf[read_previously..]);
             // return the error if there is one
             if let Err(e) = read_this_time {
-                return Some(Err(e))
+                return Some(Err(e));
             }
             let read_this_time = read_this_time.unwrap();
             // if we didn't read anything, time to stop looping
@@ -374,7 +374,7 @@ where
                 .read(&mut self.common.working_buf[read_previously..]);
             // return the error if there is one
             if let Err(e) = read_this_time {
-                return Some(Err(e))
+                return Some(Err(e));
             }
             let read_this_time = read_this_time.unwrap();
             // if we didn't read anything, time to stop looping

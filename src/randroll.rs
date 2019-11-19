@@ -27,9 +27,17 @@ pub struct DieWeights {
     d2: WeightedIndex<u64>,
 }
 
+impl Default for DieWeights {
+    fn default() -> Self {
+        Self::new_weights([1; 6])
+    }
+}
+
 impl DieWeights {
     pub fn new_fair() -> Self {
-        DieWeights::new_weights([1; 6])
+        Self {
+            ..Default::default()
+        }
     }
 
     pub fn new_weights(w: [u64; 6]) -> Self {
@@ -62,9 +70,17 @@ pub struct RollWeights {
     d: WeightedIndex<u64>,
 }
 
+impl Default for RollWeights {
+    fn default() -> Self {
+        Self::new_weights([1; 11])
+    }
+}
+
 impl RollWeights {
     pub fn new_fair() -> Self {
-        RollWeights::new_weights([1, 2, 3, 4, 5, 6, 5, 4, 3, 2, 1])
+        Self {
+            ..Default::default()
+        }
     }
 
     pub fn new_weights(w: [u64; 11]) -> Self {

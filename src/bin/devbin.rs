@@ -1,3 +1,4 @@
+use cdc2::bet::Bet;
 use cdc2::buffer::CharWhitelistIter;
 use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
@@ -81,8 +82,9 @@ fn main() {
     //    println!("{:?}", r);
     //}
     //println!("---------");
-    for r in roll_gen.take(100_000) {
+    for r in roll_gen.take(10) {
         println!("{:?}", r);
     }
-    //println!("{:?}", roll_gen.take(4).collect::<Vec<Roll>>());
+    let b = Bet::new_buy(10, 4);
+    println!("{:?}", b);
 }
