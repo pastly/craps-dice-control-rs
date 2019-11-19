@@ -560,6 +560,24 @@ mod tests {
 
     #[test]
     #[ignore]
+    fn loses_with() {
+        unimplemented!();
+    }
+
+    #[test]
+    fn loses_with_not_working() {
+        // can't lose a bet that isn't working. Some of these bets will be nonsense, but this
+        // should still hold true
+        for bet_type in BetTypeIter::new() {
+            let b = Bet::new(bet_type, false, 5, None);
+            for roll in all_rolls() {
+                assert_eq!(b.loses_with(&roll), false);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
     fn win_amount_err() {
         unimplemented!();
     }
