@@ -381,6 +381,7 @@ impl Bet {
 #[cfg(test)]
 mod tests {
     use super::{Bet, BetError, BetType};
+    use crate::roll::Roll;
 
     struct BetTypeIter {
         last: Option<BetType>,
@@ -416,12 +417,22 @@ mod tests {
         }
     }
 
+    fn all_rolls() -> Vec<Roll> {
+        let mut v = vec![];
+        for d1 in [1, 2, 3, 4, 5, 6].iter() {
+            for d2 in [1, 2, 3, 4, 5, 6].iter() {
+                v.push(Roll::new([*d1, *d2]).unwrap());
+            }
+        }
+        v
+    }
+
     #[test]
     fn set_working() {
         for bet_type in BetTypeIter::new() {
             // some of these will be nonsense bets (like Pass that isn't working or DC Odds without
             // a point) but the important part is testing if we can set the point to true. The
-            // Bet::new func isn't public.
+            // Bet::new func isn't public (right now ...).
             for already_working in [true, false].iter() {
                 for to_working in [true, false].iter() {
                     let b = Bet::new(bet_type, *already_working, 30, None);
@@ -455,6 +466,99 @@ mod tests {
     }
 
     #[test]
+    fn wins_with_not_working() {
+        // can't win a bet that isn't working. Some of these bets will be nonsense, but this should
+        // still hold true
+        for bet_type in BetTypeIter::new() {
+            let b = Bet::new(bet_type, false, 5, None);
+            for roll in all_rolls() {
+                assert_eq!(b.wins_with(&roll), false);
+            }
+        }
+    }
+
+    #[test]
+    fn wins_with() {
+        use super::{FIELD_NUMS, POINT_NUMS};
+        for bet_type in BetTypeIter::new() {
+            for roll in all_rolls() {
+                let amt = 500;
+                match bet_type {
+                    BetType::Pass | BetType::Come => {
+                        let b = if bet_type == BetType::Pass {
+                            Bet::new_pass(amt)
+                        } else {
+                            Bet::new_come(amt)
+                        };
+                        let expect = roll.value() == 7 || roll.value() == 11;
+                        assert_eq!(b.wins_with(&roll), expect);
+                        if !POINT_NUMS.contains(&roll.value()) {
+                            continue;
+                        }
+                        let b = Bet::set_point(b, roll.value()).unwrap();
+                        assert!(b.wins_with(&roll));
+                    }
+                    BetType::DontPass | BetType::DontCome => {
+                        let b = if bet_type == BetType::DontPass {
+                            Bet::new_dontpass(amt)
+                        } else {
+                            Bet::new_dontcome(amt)
+                        };
+                        let expect = roll.value() == 2 || roll.value() == 3;
+                        assert_eq!(b.wins_with(&roll), expect);
+                        if !POINT_NUMS.contains(&roll.value()) {
+                            continue;
+                        }
+                        let b = Bet::set_point(b, roll.value()).unwrap();
+                        assert!(b.wins_with(&Roll::new([3, 4]).unwrap()));
+                    }
+                    BetType::PassOdds | BetType::ComeOdds | BetType::Place | BetType::Buy => {
+                        let point = if POINT_NUMS.contains(&roll.value()) {
+                            roll.value()
+                        } else {
+                            4
+                        };
+                        let b = if bet_type == BetType::PassOdds {
+                            Bet::new_passodds(amt, point)
+                        } else if bet_type == BetType::ComeOdds {
+                            Bet::new_comeodds(amt, point)
+                        } else if bet_type == BetType::Place {
+                            Bet::new_place(amt, point)
+                        } else {
+                            Bet::new_buy(amt, point)
+                        };
+                        assert!(b.point.is_some());
+                        let expect = roll.value() == b.point.unwrap();
+                        assert_eq!(b.wins_with(&roll), expect);
+                    }
+                    BetType::DontPassOdds | BetType::DontComeOdds | BetType::Lay => {
+                        let point = if POINT_NUMS.contains(&roll.value()) {
+                            roll.value()
+                        } else {
+                            4
+                        };
+                        let b = if bet_type == BetType::DontPassOdds {
+                            Bet::new_dontpassodds(amt, point)
+                        } else if bet_type == BetType::DontComeOdds {
+                            Bet::new_dontcomeodds(amt, point)
+                        } else {
+                            Bet::new_lay(amt, point)
+                        };
+                        assert!(b.point.is_some());
+                        let expect = roll.value() == 7;
+                        assert_eq!(b.wins_with(&roll), expect);
+                    }
+                    BetType::Field => {
+                        let b = Bet::new_field(amt);
+                        let expect = FIELD_NUMS.contains(&roll.value());
+                        assert_eq!(b.wins_with(&roll), expect);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     #[ignore]
     fn win_amount_err() {
         unimplemented!();
@@ -463,7 +567,6 @@ mod tests {
     #[test]
     fn win_amount() {
         use super::{BUY_PAY_UPFRONT, LAY_PAY_UPFRONT};
-        use crate::roll::Roll;
         for bet_type in BetTypeIter::new() {
             match bet_type {
                 BetType::Pass | BetType::Come => {
@@ -592,7 +695,7 @@ mod tests {
                         };
                         assert_eq!(b.win_amount(roll), Ok(win - vig));
                     }
-                },
+                }
                 BetType::Lay => {
                     for point in [4, 5, 6, 8, 9, 10].iter() {
                         let amt = 500;
@@ -607,7 +710,7 @@ mod tests {
                         let vig = if LAY_PAY_UPFRONT { 0 } else { win * 5 / 100 };
                         assert_eq!(b.win_amount(&Roll::new([3, 4]).unwrap()), Ok(win - vig));
                     }
-                },
+                }
             }
         }
     }
