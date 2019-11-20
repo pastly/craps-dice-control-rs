@@ -169,7 +169,7 @@ impl Bet {
         }
     }
 
-    pub fn wins_with(self, r: &Roll) -> bool {
+    pub fn wins_with(self, r: Roll) -> bool {
         if !self.working {
             return false;
         }
@@ -211,7 +211,7 @@ impl Bet {
         }
     }
 
-    pub fn loses_with(self, r: &Roll) -> bool {
+    pub fn loses_with(self, r: Roll) -> bool {
         if !self.working {
             return false;
         }
@@ -259,25 +259,24 @@ impl Bet {
         }
     }
 
-    pub fn win_amount(self, r: &Roll) -> Result<u32, BetError> {
+    pub fn win_amount(self, r: Roll) -> Result<u32, BetError> {
         match self.bet_type {
             BetType::Pass | BetType::Come => {
-                if self.point.is_none() && r.value() != 7 && r.value() != 11 {
-                    // without point, only wins on 7 and 11
-                    return Err(BetError::DoesntWin(self, *r));
-                } else if self.point.is_some() && r.value() != self.point.unwrap() {
-                    // with point, only wins on point value
-                    return Err(BetError::DoesntWin(self, *r));
+                if self.point.is_none() && r.value() != 7 && r.value() != 11
+                    || self.point.is_some() && r.value() != self.point.unwrap()
+                {
+                    // without point, only wins on 7 and 11, and with point, only wins on point
+                    // value
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 Ok(self.amount)
             }
             BetType::DontPass | BetType::DontCome => {
-                if self.point.is_none() && r.value() != 2 && r.value() != 3 {
-                    // without point, only wins on 2 and 3
-                    return Err(BetError::DoesntWin(self, *r));
-                } else if self.point.is_some() && r.value() != 7 {
-                    // with point, only wins on 7
-                    return Err(BetError::DoesntWin(self, *r));
+                if self.point.is_none() && r.value() != 2 && r.value() != 3
+                    || self.point.is_some() && r.value() != 7
+                {
+                    // without point, only wins on 2 and 3, and with point, only wins on 7
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 Ok(self.amount)
             }
@@ -286,12 +285,12 @@ impl Bet {
                 11 => Ok(self.amount * if FIELD_DOUB_11 { 2 } else { 1 }),
                 12 => Ok(self.amount * if FIELD_TRIP_12 { 3 } else { 2 }),
                 3 | 4 | 9 | 10 => Ok(self.amount),
-                _ => Err(BetError::DoesntWin(self, *r)),
+                _ => Err(BetError::DoesntWin(self, r)),
             },
             BetType::PassOdds | BetType::ComeOdds => {
                 assert!(self.point.is_some());
                 if r.value() != self.point.unwrap() {
-                    return Err(BetError::DoesntWin(self, *r));
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 match self.point.unwrap() {
                     4 | 10 => Ok(self.amount * 2),
@@ -303,7 +302,7 @@ impl Bet {
             BetType::DontPassOdds | BetType::DontComeOdds => {
                 assert!(self.point.is_some());
                 if r.value() != 7 {
-                    return Err(BetError::DoesntWin(self, *r));
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 match self.point.unwrap() {
                     4 | 10 => Ok(self.amount / 2),
@@ -315,7 +314,7 @@ impl Bet {
             BetType::Place => {
                 assert!(self.point.is_some());
                 if r.value() != self.point.unwrap() {
-                    return Err(BetError::DoesntWin(self, *r));
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 match self.point.unwrap() {
                     4 | 10 => Ok(self.amount * 9 / 5),
@@ -327,7 +326,7 @@ impl Bet {
             BetType::Buy => {
                 assert!(self.point.is_some());
                 if r.value() != self.point.unwrap() {
-                    return Err(BetError::DoesntWin(self, *r));
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 let vig = if BUY_PAY_UPFRONT {
                     0
@@ -344,7 +343,7 @@ impl Bet {
             BetType::Lay => {
                 assert!(self.point.is_some());
                 if r.value() != 7 {
-                    return Err(BetError::DoesntWin(self, *r));
+                    return Err(BetError::DoesntWin(self, r));
                 }
                 let win = match self.point.unwrap() {
                     4 | 10 => self.amount / 2,
@@ -452,7 +451,7 @@ mod tests {
         for bet_type in BetTypeIter::new() {
             let b = Bet::new(bet_type, false, 5, None);
             for roll in all_rolls() {
-                assert_eq!(b.wins_with(&roll), false);
+                assert_eq!(b.wins_with(roll), false);
             }
         }
     }
@@ -471,12 +470,12 @@ mod tests {
                             Bet::new_come(amt)
                         };
                         let expect = roll.value() == 7 || roll.value() == 11;
-                        assert_eq!(b.wins_with(&roll), expect);
+                        assert_eq!(b.wins_with(roll), expect);
                         if !POINT_NUMS.contains(&roll.value()) {
                             continue;
                         }
                         let b = Bet::set_point(b, roll.value()).unwrap();
-                        assert!(b.wins_with(&roll));
+                        assert!(b.wins_with(roll));
                     }
                     BetType::DontPass | BetType::DontCome => {
                         let b = if bet_type == BetType::DontPass {
@@ -485,12 +484,12 @@ mod tests {
                             Bet::new_dontcome(amt)
                         };
                         let expect = roll.value() == 2 || roll.value() == 3;
-                        assert_eq!(b.wins_with(&roll), expect);
+                        assert_eq!(b.wins_with(roll), expect);
                         if !POINT_NUMS.contains(&roll.value()) {
                             continue;
                         }
                         let b = Bet::set_point(b, roll.value()).unwrap();
-                        assert!(b.wins_with(&Roll::new([3, 4]).unwrap()));
+                        assert!(b.wins_with(Roll::new([3, 4]).unwrap()));
                     }
                     BetType::PassOdds | BetType::ComeOdds | BetType::Place | BetType::Buy => {
                         let point = if POINT_NUMS.contains(&roll.value()) {
@@ -509,7 +508,7 @@ mod tests {
                         };
                         assert!(b.point.is_some());
                         let expect = roll.value() == b.point.unwrap();
-                        assert_eq!(b.wins_with(&roll), expect);
+                        assert_eq!(b.wins_with(roll), expect);
                     }
                     BetType::DontPassOdds | BetType::DontComeOdds | BetType::Lay => {
                         let point = if POINT_NUMS.contains(&roll.value()) {
@@ -526,12 +525,12 @@ mod tests {
                         };
                         assert!(b.point.is_some());
                         let expect = roll.value() == 7;
-                        assert_eq!(b.wins_with(&roll), expect);
+                        assert_eq!(b.wins_with(roll), expect);
                     }
                     BetType::Field => {
                         let b = Bet::new_field(amt);
                         let expect = FIELD_NUMS.contains(&roll.value());
-                        assert_eq!(b.wins_with(&roll), expect);
+                        assert_eq!(b.wins_with(roll), expect);
                     }
                 }
             }
@@ -551,7 +550,7 @@ mod tests {
         for bet_type in BetTypeIter::new() {
             let b = Bet::new(bet_type, false, 5, None);
             for roll in all_rolls() {
-                assert_eq!(b.loses_with(&roll), false);
+                assert_eq!(b.loses_with(roll), false);
             }
         }
     }
@@ -573,10 +572,10 @@ mod tests {
                     } else {
                         Bet::new_come(500)
                     };
-                    assert_eq!(b.win_amount(&Roll::new([3, 4]).unwrap()), Ok(500));
-                    assert_eq!(b.win_amount(&Roll::new([5, 6]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([3, 4]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([5, 6]).unwrap()), Ok(500));
                     let b = Bet::set_point(b, 4).unwrap();
-                    assert_eq!(b.win_amount(&Roll::new([1, 3]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([1, 3]).unwrap()), Ok(500));
                 }
                 BetType::DontPass | BetType::DontCome => {
                     let b = if bet_type == BetType::DontPass {
@@ -584,10 +583,10 @@ mod tests {
                     } else {
                         Bet::new_dontcome(500)
                     };
-                    assert_eq!(b.win_amount(&Roll::new([1, 1]).unwrap()), Ok(500));
-                    assert_eq!(b.win_amount(&Roll::new([1, 2]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([1, 1]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([1, 2]).unwrap()), Ok(500));
                     let b = Bet::set_point(b, 4).unwrap();
-                    assert_eq!(b.win_amount(&Roll::new([3, 4]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([3, 4]).unwrap()), Ok(500));
                 }
                 BetType::DontPassOdds | BetType::DontComeOdds => {
                     for (point, roll) in [
@@ -612,7 +611,7 @@ mod tests {
                             6 | 8 => amt * 5 / 6,
                             _ => panic!(),
                         };
-                        assert_eq!(b.win_amount(&roll), Ok(win));
+                        assert_eq!(b.win_amount(*roll), Ok(win));
                     }
                 }
                 BetType::PassOdds | BetType::ComeOdds => {
@@ -638,15 +637,15 @@ mod tests {
                             6 | 8 => amt * 6 / 5,
                             _ => panic!(),
                         };
-                        assert_eq!(b.win_amount(&roll), Ok(win));
+                        assert_eq!(b.win_amount(*roll), Ok(win));
                     }
                 }
                 BetType::Field => {
                     let b = Bet::new_field(500);
-                    assert_eq!(b.win_amount(&Roll::new([4, 5]).unwrap()), Ok(500));
-                    assert_eq!(b.win_amount(&Roll::new([1, 1]).unwrap()), Ok(1000));
-                    assert_eq!(b.win_amount(&Roll::new([6, 6]).unwrap()), Ok(1000));
-                    assert_eq!(b.win_amount(&Roll::new([5, 6]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([4, 5]).unwrap()), Ok(500));
+                    assert_eq!(b.win_amount(Roll::new([1, 1]).unwrap()), Ok(1000));
+                    assert_eq!(b.win_amount(Roll::new([6, 6]).unwrap()), Ok(1000));
+                    assert_eq!(b.win_amount(Roll::new([5, 6]).unwrap()), Ok(500));
                 }
                 BetType::Place => {
                     for roll in [
@@ -667,7 +666,7 @@ mod tests {
                             6 | 8 => amt * 7 / 6,
                             _ => panic!(),
                         };
-                        assert_eq!(b.win_amount(roll), Ok(win));
+                        assert_eq!(b.win_amount(*roll), Ok(win));
                     }
                 }
                 BetType::Buy => {
@@ -691,7 +690,7 @@ mod tests {
                             6 | 8 => amt * 6 / 5,
                             _ => panic!(),
                         };
-                        assert_eq!(b.win_amount(roll), Ok(win - vig));
+                        assert_eq!(b.win_amount(*roll), Ok(win - vig));
                     }
                 }
                 BetType::Lay => {
@@ -706,7 +705,7 @@ mod tests {
                             _ => panic!(),
                         };
                         let vig = if LAY_PAY_UPFRONT { 0 } else { win * 5 / 100 };
-                        assert_eq!(b.win_amount(&Roll::new([3, 4]).unwrap()), Ok(win - vig));
+                        assert_eq!(b.win_amount(Roll::new([3, 4]).unwrap()), Ok(win - vig));
                     }
                 }
             }

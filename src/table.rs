@@ -4,8 +4,8 @@ use crate::roll::Roll;
 use std::default::Default;
 use std::fmt;
 
-const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
-const FIELD_PAYS: [u8; 7] = [2, 1, 1, 1, 1, 1, 2];
+//const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
+//const FIELD_PAYS: [u8; 7] = [2, 1, 1, 1, 1, 1, 2];
 const POINTS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
@@ -65,8 +65,8 @@ impl PlayerCommon {
         let r = table_state.last_roll.unwrap();
         // handle winners and losers
         {
-            let wins: Vec<&Bet> = self.bets.iter().filter(|b| b.wins_with(&r)).collect();
-            let losses: Vec<&Bet> = self.bets.iter().filter(|b| b.loses_with(&r)).collect();
+            let wins: Vec<&Bet> = self.bets.iter().filter(|b| b.wins_with(r)).collect();
+            let losses: Vec<&Bet> = self.bets.iter().filter(|b| b.loses_with(r)).collect();
             // if win/loss logic isn't broken, can't have more wins + losses than bets
             assert!(wins.len() + losses.len() <= self.bets.len());
             // no winner can be a loser if logic is correct
@@ -78,7 +78,7 @@ impl PlayerCommon {
                 assert!(!wins.contains(&b));
             }
             for b in wins.iter() {
-                let winnings = b.win_amount(&r).unwrap();
+                let winnings = b.win_amount(r).unwrap();
                 eprintln!("Player won {} from {}", winnings, b);
                 self.bankroll += winnings + b.amount();
                 self.wagered -= b.amount();
@@ -88,7 +88,7 @@ impl PlayerCommon {
                 self.wagered -= b.amount();
             }
         }
-        self.bets.retain(|b| !b.wins_with(&r) && !b.loses_with(&r));
+        self.bets.retain(|b| !b.wins_with(r) && !b.loses_with(r));
         // set points as necessary
         self.bets = self
             .bets
@@ -187,7 +187,7 @@ pub struct Table {
 impl Table {
     pub fn new(roll_gen: Box<dyn RollGen>) -> Self {
         Table {
-            state: Default::default(),
+            state: TableState::new(),
             roll_gen,
             players: Default::default(),
         }

@@ -31,7 +31,7 @@ impl Roll {
         }
     }
 
-    pub fn value(&self) -> u8 {
+    pub fn value(self) -> u8 {
         self.dice[0] + self.dice[1]
     }
 
@@ -39,7 +39,7 @@ impl Roll {
         &self.dice
     }
 
-    pub fn is_hard(&self) -> bool {
+    pub fn is_hard(self) -> bool {
         self.dice[0] != 1 && self.dice[0] != 6 && self.dice[0] == self.dice[1]
     }
 }
