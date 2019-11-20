@@ -1,7 +1,7 @@
-use cdc2::bet::Bet;
 use cdc2::buffer::CharWhitelistIter;
 use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
+use cdc2::table::{FieldPlayer, Table};
 use std::io::{self, Read};
 
 struct RollReader<R>
@@ -82,9 +82,10 @@ fn main() {
     //    println!("{:?}", r);
     //}
     //println!("---------");
-    for r in roll_gen.take(10) {
-        println!("{:?}", r);
-    }
-    let b = Bet::new_buy(10, 4);
-    println!("{:?}", b);
+    let mut table = Table::new(Box::new(roll_gen));
+    table.add_player(Box::new(FieldPlayer::new(500)));
+    table.loop_once();
+    table.loop_once();
+    //let b = Bet::new_buy(10, 4);
+    //println!("{:?}", b);
 }

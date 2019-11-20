@@ -56,7 +56,7 @@ const FIELD_TRIP_12: bool = false;
 const FIELD_DOUB_11: bool = false;
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
-static POINT_NUMS: [u8; 6] = [4, 5, 6, 8, 9, 10];
+const POINT_NUMS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 
 impl Bet {
     fn new(bet_type: BetType, working: bool, amount: u32, point: Option<u8>) -> Bet {
@@ -245,9 +245,7 @@ impl Bet {
                 assert!(self.point.is_some());
                 // loses on point
                 r.value() == self.point.unwrap()
-            } //_ => {
-              //    panic!("unimpl losess_with(roll) for this bet type")
-              //}
+            }
         }
     }
 
@@ -348,34 +346,6 @@ impl Bet {
             }
         }
     }
-
-    //pub fn notworking_of_type(mut bets: Vec<Bet>, bet_type: BetType) -> Vec<Bet> {
-    //    bets.retain(|&b| b.bet_type == bet_type);
-    //    bets.retain(|&b| !b.working);
-    //    bets
-    //}
-
-    //pub fn working_of_type(mut bets: Vec<Bet>, bet_type: BetType) -> Vec<Bet> {
-    //    bets.retain(|&b| b.bet_type == bet_type);
-    //    bets.retain(|&b| b.working);
-    //    bets
-    //}
-
-    //pub fn working_anypoint_of_type(mut bets: Vec<Bet>, bet_type: BetType) -> Vec<Bet> {
-    //    bets = Bet::working_of_type(bets, bet_type);
-    //    bets.retain(|&b| b.point != None);
-    //    bets
-    //}
-
-    //pub fn working_point_of_type(
-    //    mut bets: Vec<Bet>,
-    //    bet_type: BetType,
-    //    point: Option<u8>,
-    //) -> Vec<Bet> {
-    //    bets = Bet::working_of_type(bets, bet_type);
-    //    bets.retain(|&b| b.point == point);
-    //    bets
-    //}
 }
 
 #[cfg(test)]

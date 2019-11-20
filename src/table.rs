@@ -9,8 +9,12 @@ const POINTS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
 
-trait Player {
+pub trait Player {
     fn make_bets(&mut self, state: &TableState);
+
+    fn react_to_roll(&mut self, table_state: &TableState) {
+        eprintln!("Player reacting to {:?}", table_state);
+    }
 }
 
 #[derive(Default)]
@@ -21,14 +25,15 @@ struct PlayerCommon {
 }
 
 impl PlayerCommon {
-    fn new() -> Self {
+    fn new(bankroll: u32) -> Self {
         Self {
+            bankroll,
             ..Default::default()
         }
     }
 
     fn add_bet(&mut self, b: Bet) {
-        panic!("Unfinished impl at this time of PlayerCommon::add_bet()");
+        eprintln!("Player (bank {}) making {:?}", self.bankroll, b);
         // make sure there is no bet of this type already
         assert_eq!(
             self.bets
@@ -45,6 +50,7 @@ impl PlayerCommon {
             assert!(b.amount() + vig <= self.bankroll);
         } else if LAY_PAY_UPFRONT && b.bet_type == BetType::Lay {
             // calc vig based on amount to be won
+            unimplemented!();
         }
         // move from bankroll to wagered
         self.bankroll -= b.amount();
@@ -54,15 +60,14 @@ impl PlayerCommon {
     }
 }
 
-#[derive(Default)]
-struct FieldPlayer {
+pub struct FieldPlayer {
     common: PlayerCommon,
 }
 
 impl FieldPlayer {
-    fn new() -> Self {
+    pub fn new(bankroll: u32) -> Self {
         Self {
-            ..Default::default()
+            common: PlayerCommon::new(bankroll),
         }
     }
 }
@@ -75,7 +80,7 @@ impl Player for FieldPlayer {
     }
 }
 
-struct Table {
+pub struct Table {
     state: TableState,
     roll_gen: Box<dyn RollGen>,
     players: Vec<Box<dyn Player>>,
@@ -90,15 +95,43 @@ impl Table {
         }
     }
 
+    pub fn add_player(&mut self, p: Box<dyn Player>) {
+        self.players.push(p);
+    }
+
+    pub fn loop_once(&mut self) {
+        self.pre_roll();
+        self.roll();
+        self.post_roll();
+    }
+
     fn pre_roll(&mut self) {
         for p in &mut self.players {
             p.make_bets(&self.state);
         }
     }
+
+    fn roll(&mut self) {
+        let r = self.roll_gen.gen();
+        eprintln!("Roll is {:?}", r);
+        self.state.last_roll = Some(r);
+    }
+
+    fn post_roll(&mut self) {
+        for p in &mut self.players {
+            p.react_to_roll(&self.state);
+        }
+        let r = self.state.last_roll.unwrap();
+        if self.state.point.is_none() && POINTS.contains(&r.value()) {
+            self.state.point = Some(r.value());
+        } else if self.state.point.is_some() && r.value() == 7 {
+            self.state.point = None;
+        }
+    }
 }
 
-#[derive(Default)]
-struct TableState {
+#[derive(Debug, Default)]
+pub struct TableState {
     point: Option<u8>,
     last_roll: Option<Roll>,
 }
