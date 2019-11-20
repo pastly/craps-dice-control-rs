@@ -44,6 +44,12 @@ impl Roll {
     }
 }
 
+impl fmt::Display for Roll {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "Roll<{}, {}>", self.dice[0], self.dice[1])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Roll;

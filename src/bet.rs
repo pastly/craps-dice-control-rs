@@ -10,6 +10,16 @@ pub struct Bet {
     point: Option<u8>,
 }
 
+impl fmt::Display for Bet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Bet<${} {:?} work={} point={:?}>",
+            self.amount, self.bet_type, self.working, self.point
+        )
+    }
+}
+
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum BetType {
     Pass,
