@@ -22,7 +22,7 @@ pub trait Player {
 }
 
 pub trait PlayerRecorder {
-    fn record(&mut self, bank: &u32, wage: &u32, bets: &Vec<Bet>);
+    fn record(&mut self, bank: u32, wage: u32, bets: &[Bet]);
     fn done(&mut self);
 }
 
@@ -157,7 +157,7 @@ impl PlayerCommon {
 
     fn record_activity(&mut self) {
         if let Some(r) = &mut self.recorder {
-            r.record(&self.bankroll, &self.wagered, &self.bets);
+            r.record(self.bankroll, self.wagered, &self.bets);
         }
     }
 
@@ -378,8 +378,8 @@ impl BankrollRecorder {
 }
 
 impl PlayerRecorder for BankrollRecorder {
-    fn record(&mut self, bank: &u32, _wage: &u32, _bets: &Vec<Bet>) {
-        let _ = write!(self.file, "{}\n", bank);
+    fn record(&mut self, bank: u32, _wage: u32, _bets: &[Bet]) {
+        let _ = writeln!(self.file, "{}", bank);
     }
 
     fn done(&mut self) {
