@@ -126,13 +126,14 @@ impl PlayerCommon {
                 self.wagered -= b.amount();
             }
         }
+        // actually remove winners and losers
         self.bets.retain(|b| !b.wins_with(r) && !b.loses_with(r));
-        // set points as necessary
+        // adjust bets as necessary
         self.bets = self
             .bets
             .iter()
-            .filter(|b| {
-                [
+            .map(|b| {
+                if [
                     BetType::Pass,
                     BetType::Come,
                     BetType::DontPass,
@@ -140,8 +141,14 @@ impl PlayerCommon {
                 ]
                 .contains(&b.bet_type)
                     && b.point().is_none()
+                {
+                    // if need their point set
+                    Bet::set_point(*b, r.value()).unwrap()
+                } else {
+                    // no adjustment needed
+                    *b
+                }
             })
-            .map(|b| Bet::set_point(*b, r.value()).unwrap())
             .collect();
         //eprintln!("{}", self);
     }
