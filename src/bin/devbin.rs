@@ -87,7 +87,7 @@ fn main() {
     field.attach_recorder(Box::new(BankrollRecorder::new("bankroll.txt").unwrap()));
     table.add_player(Box::new(field));
     table.add_player(Box::new(PassPlayer::new(500)));
-    for _ in 0..10 {
+    for _ in 0..1000 {
         table.loop_once();
     }
     table.done();

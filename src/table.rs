@@ -2,6 +2,7 @@ use crate::bet::{Bet, BetType};
 use crate::randroll::RollGen;
 use crate::roll::Roll;
 use std::default::Default;
+use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::io;
@@ -13,7 +14,7 @@ const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
 
 pub trait Player {
-    fn make_bets(&mut self, state: &TableState);
+    fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError>;
     fn react_to_roll(&mut self, table_state: &TableState);
     fn done(&mut self);
     fn record_activity(&mut self);
@@ -25,12 +26,36 @@ pub trait PlayerRecorder {
     fn done(&mut self);
 }
 
+#[derive(Debug)]
+pub enum PlayerError {
+    NotEnoughBankroll(),
+}
+
+impl Error for PlayerError {}
+
+impl fmt::Display for PlayerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlayerError::NotEnoughBankroll() => write!(f, "Ran out of bankroll"),
+        }
+    }
+}
+
 #[derive(Default)]
 struct PlayerCommon {
     bets: Vec<Bet>,
     bankroll: u32,
     wagered: u32,
     recorder: Option<Box<dyn PlayerRecorder>>,
+}
+
+impl PartialEq for PlayerCommon {
+    fn eq(&self, other: &Self) -> bool {
+        self.bets == other.bets
+            && self.bankroll == other.bankroll
+            && self.wagered == other.wagered
+            && self.recorder.is_some() == other.recorder.is_some()
+    }
 }
 
 impl PlayerCommon {
@@ -47,7 +72,7 @@ impl PlayerCommon {
         }
     }
 
-    fn add_bet(&mut self, b: Bet) {
+    fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
         eprintln!("{} making {}", self, b);
         // make sure there is no bet of this type already
         assert_eq!(
@@ -58,11 +83,15 @@ impl PlayerCommon {
             0
         );
         // make sure we have the money for it
-        assert!(b.amount() <= self.bankroll);
+        if b.amount() > self.bankroll {
+            return Err(PlayerError::NotEnoughBankroll());
+        }
         // and make sure we have the money for the vig too if paid up front
         if BUY_PAY_UPFRONT && b.bet_type == BetType::Buy {
             let vig = b.amount() * 5 / 100;
-            assert!(b.amount() + vig <= self.bankroll);
+            if b.amount() + vig > self.bankroll {
+                return Err(PlayerError::NotEnoughBankroll());
+            }
         } else if LAY_PAY_UPFRONT && b.bet_type == BetType::Lay {
             // calc vig based on amount to be won
             unimplemented!();
@@ -73,6 +102,7 @@ impl PlayerCommon {
         // add to list of bets
         self.bets.push(b);
         //eprintln!("{}", self);
+        Ok(())
     }
 
     fn react_to_roll(&mut self, table_state: &TableState) {
@@ -162,10 +192,11 @@ impl FieldPlayer {
 }
 
 impl Player for FieldPlayer {
-    fn make_bets(&mut self, _state: &TableState) {
+    fn make_bets(&mut self, _state: &TableState) -> Result<(), PlayerError> {
         if self.common.bets.len() != 1 {
-            self.common.add_bet(Bet::new_field(5));
+            self.common.add_bet(Bet::new_field(5))?
         }
+        Ok(())
     }
 
     fn done(&mut self) {
@@ -198,7 +229,7 @@ impl PassPlayer {
 }
 
 impl Player for PassPlayer {
-    fn make_bets(&mut self, _state: &TableState) {
+    fn make_bets(&mut self, _state: &TableState) -> Result<(), PlayerError> {
         match self.common.bets.len() {
             0 => self.common.add_bet(Bet::new_pass(5)),
             1 => {
@@ -209,8 +240,8 @@ impl Player for PassPlayer {
                     other.point().unwrap(),
                 ))
             }
-            _ => {}
-        };
+            _ => Ok(()),
+        }
     }
 
     fn done(&mut self) {
@@ -264,9 +295,26 @@ impl Table {
     }
 
     fn pre_roll(&mut self) {
-        for p in &mut self.players {
-            p.make_bets(&self.state);
-            p.record_activity();
+        // extra complex just because this was the first way I could figure out how to iterate over
+        // all the players and optionally remove them while doing so
+        self.players = {
+            // accumulate players to keep. Will return out of this code block at the end
+            let mut keep = vec![];
+            // Take each player out of the existing self.players
+            for mut p in self.players.drain(0..) {
+                // Do useful work here
+                let res = p.make_bets(&self.state);
+                p.record_activity();
+                // If we want to remove it, tell the player it is done and neglect to add it to the
+                // keep vector
+                if let Err(e) = res {
+                    eprintln!("Considering player finished because {}", e);
+                    p.done();
+                } else {
+                    keep.push(p);
+                }
+            }
+            keep
         }
     }
 
