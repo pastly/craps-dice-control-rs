@@ -4,8 +4,6 @@ use crate::roll::Roll;
 use std::default::Default;
 use std::error::Error;
 use std::fmt;
-use std::fs;
-use std::io;
 
 //const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
 //const FIELD_PAYS: [u8; 7] = [2, 1, 1, 1, 1, 1, 2];
@@ -19,11 +17,13 @@ pub trait Player {
     fn done(&mut self);
     fn record_activity(&mut self);
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>);
+    fn recorder_output(&self) -> &str;
 }
 
 pub trait PlayerRecorder {
     fn record(&mut self, bank: u32, wage: u32, bets: &[Bet]);
     fn done(&mut self);
+    fn read_output(&self) -> &str;
 }
 
 #[derive(Debug)]
@@ -156,6 +156,14 @@ impl PlayerCommon {
         assert!(self.recorder.is_none());
         self.recorder = Some(r);
     }
+
+    fn recorder_output(&self) -> &str {
+        if let Some(r) = &self.recorder {
+            r.read_output()
+        } else {
+            ""
+        }
+    }
 }
 
 impl fmt::Display for PlayerCommon {
@@ -205,6 +213,10 @@ impl Player for FieldPlayer {
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
         self.common.attach_recorder(r)
     }
+
+    fn recorder_output(&self) -> &str {
+        self.common.recorder_output()
+    }
 }
 
 pub struct PassPlayer {
@@ -250,6 +262,10 @@ impl Player for PassPlayer {
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
         self.common.attach_recorder(r)
     }
+
+    fn recorder_output(&self) -> &str {
+        self.common.recorder_output()
+    }
 }
 
 pub struct Table {
@@ -267,30 +283,34 @@ impl Table {
         }
     }
 
-    pub fn done(&mut self) {
+    pub fn done(&mut self) -> Vec<Box<dyn Player>> {
         for p in &mut self.players {
             p.done();
         }
-        self.players.clear();
+        self.players.drain(0..).collect()
     }
 
     pub fn add_player(&mut self, p: Box<dyn Player>) {
         self.players.push(p);
     }
 
-    pub fn loop_once(&mut self) {
+    pub fn loop_once(&mut self) -> Vec<Box<dyn Player>> {
         if self.players.is_empty() {
-            return;
+            return vec![];
         }
-        self.pre_roll();
+        let finished = self.pre_roll();
         self.roll();
         self.post_roll();
         eprintln!("------");
+        finished
     }
 
-    fn pre_roll(&mut self) {
-        // extra complex just because this was the first way I could figure out how to iterate over
-        // all the players and optionally remove them while doing so
+    fn pre_roll(&mut self) -> Vec<Box<dyn Player>> {
+        // Extra complex just because this was the first way I could figure out how to iterate over
+        // all the players and optionally remove them while doing so.
+        // Oh and then I went back and decided I wanted to also return players that are newly
+        // finished.
+        let mut finished = vec![];
         self.players = {
             // accumulate players to keep. Will return out of this code block at the end
             let mut keep = vec![];
@@ -304,12 +324,14 @@ impl Table {
                 if let Err(e) = res {
                     eprintln!("Considering player finished because {}", e);
                     p.done();
+                    finished.push(p);
                 } else {
                     keep.push(p);
                 }
             }
             keep
-        }
+        };
+        finished
     }
 
     fn roll(&mut self) {
@@ -355,22 +377,15 @@ impl fmt::Display for TableState {
     }
 }
 
+#[derive(Default)]
 pub struct BankrollRecorder {
-    file: Box<dyn io::Write>,
+    out: String,
     data: Vec<u32>,
 }
 
 impl BankrollRecorder {
-    pub fn new(fname: &str) -> io::Result<Self> {
-        let f = fs::OpenOptions::new()
-            .write(true)
-            .append(true)
-            .create(true)
-            .open(fname)?;
-        Ok(Self {
-            file: Box::new(io::BufWriter::new(f)),
-            data: vec![],
-        })
+    pub fn new() -> Self {
+        Self { ..Default::default() }
     }
 }
 
@@ -381,8 +396,11 @@ impl PlayerRecorder for BankrollRecorder {
     }
 
     fn done(&mut self) {
-        let _ = writeln!(self.file, "{}", serde_json::to_string(&self.data).unwrap());
+        self.out = serde_json::to_string(&self.data).unwrap();
         self.data.clear();
-        //let _ = self.file.flush();
+    }
+
+    fn read_output(&self) -> &str {
+        &self.out
     }
 }

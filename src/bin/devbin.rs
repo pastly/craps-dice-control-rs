@@ -62,16 +62,27 @@ where
 
 fn main() {
     let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
-    let _: Vec<_> = (0..2).map(|_| {
+    let outputs: Vec<String> = (0..1000).map(|_| {
+        let mut output = String::new();
         let roll_gen = DieWeights::new_weights2(d1, d2);
         let mut table = Table::new(Box::new(roll_gen));
         let mut field = FieldPlayer::new(500);
-        field.attach_recorder(Box::new(BankrollRecorder::new("bankroll.json").unwrap()));
+        field.attach_recorder(Box::new(BankrollRecorder::new()));
         table.add_player(Box::new(field));
-        table.add_player(Box::new(PassPlayer::new(500)));
-        for _ in 0..10 {
-            table.loop_once();
+        //table.add_player(Box::new(PassPlayer::new(500)));
+        for _ in 0..1000 {
+            let finished_players = table.loop_once();
+            for p in finished_players {
+                output += p.recorder_output();
+            }
         }
-        table.done();
+        let finished_players = table.done();
+        for p in finished_players {
+            output += p.recorder_output();
+        }
+        output
     }).collect();
+    for o in outputs {
+        println!("{}", o);
+    }
 }
