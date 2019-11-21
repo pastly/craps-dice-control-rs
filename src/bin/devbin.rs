@@ -60,28 +60,8 @@ where
     (d1, d2)
 }
 
-//fn roll_weights_from_roll_iter<I>(rolls: I) -> [u64; 11]
-//where
-//    I: Iterator<Item = Roll>,
-//{
-//    let mut weights = [0; 11];
-//    for r in rolls {
-//        weights[r.value() as usize - 2] += 1;
-//    }
-//    weights
-//}
-
 fn main() {
     let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
-    //println!("{:?}", d1);
-    //println!("{:?}", d2);
-    //println!("---------");
-    let roll_gen = DieWeights::new_weights2(d1, d2);
-    //for _ in 0..10 {
-    //    let r = roll_gen.gen();
-    //    println!("{:?}", r);
-    //}
-    //println!("---------");
     let _: Vec<_> = (0..2).map(|_| {
         let roll_gen = DieWeights::new_weights2(d1, d2);
         let mut table = Table::new(Box::new(roll_gen));
@@ -94,6 +74,4 @@ fn main() {
         }
         table.done();
     }).collect();
-    //let b = Bet::new_buy(10, 4);
-    //println!("{:?}", b);
 }
