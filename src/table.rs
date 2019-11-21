@@ -3,6 +3,8 @@ use crate::randroll::RollGen;
 use crate::roll::Roll;
 use std::default::Default;
 use std::fmt;
+use std::fs;
+use std::io;
 
 //const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
 //const FIELD_PAYS: [u8; 7] = [2, 1, 1, 1, 1, 1, 2];
@@ -13,6 +15,14 @@ const LAY_PAY_UPFRONT: bool = true;
 pub trait Player {
     fn make_bets(&mut self, state: &TableState);
     fn react_to_roll(&mut self, table_state: &TableState);
+    fn done(&mut self);
+    fn record_activity(&mut self);
+    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>);
+}
+
+pub trait PlayerRecorder {
+    fn record(&mut self, bank: &u32, wage: &u32, bets: &Vec<Bet>);
+    fn done(&mut self);
 }
 
 #[derive(Default)]
@@ -20,6 +30,7 @@ struct PlayerCommon {
     bets: Vec<Bet>,
     bankroll: u32,
     wagered: u32,
+    recorder: Option<Box<dyn PlayerRecorder>>,
 }
 
 impl PlayerCommon {
@@ -27,6 +38,12 @@ impl PlayerCommon {
         Self {
             bankroll,
             ..Default::default()
+        }
+    }
+
+    fn done(&mut self) {
+        if let Some(r) = &mut self.recorder {
+            r.done()
         }
     }
 
@@ -107,6 +124,17 @@ impl PlayerCommon {
             .collect();
         //eprintln!("{}", self);
     }
+
+    fn record_activity(&mut self) {
+        if let Some(r) = &mut self.recorder {
+            r.record(&self.bankroll, &self.wagered, &self.bets);
+        }
+    }
+
+    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
+        assert!(self.recorder.is_none());
+        self.recorder = Some(r);
+    }
 }
 
 impl fmt::Display for PlayerCommon {
@@ -140,8 +168,20 @@ impl Player for FieldPlayer {
         }
     }
 
+    fn done(&mut self) {
+        self.common.done()
+    }
+
     fn react_to_roll(&mut self, table_state: &TableState) {
         self.common.react_to_roll(table_state)
+    }
+
+    fn record_activity(&mut self) {
+        self.common.record_activity()
+    }
+
+    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
+        self.common.attach_recorder(r)
     }
 }
 
@@ -173,8 +213,20 @@ impl Player for PassPlayer {
         };
     }
 
+    fn done(&mut self) {
+        self.common.done()
+    }
+
     fn react_to_roll(&mut self, table_state: &TableState) {
         self.common.react_to_roll(table_state)
+    }
+
+    fn record_activity(&mut self) {
+        self.common.record_activity()
+    }
+
+    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
+        self.common.attach_recorder(r)
     }
 }
 
@@ -193,6 +245,13 @@ impl Table {
         }
     }
 
+    pub fn done(&mut self) {
+        for p in &mut self.players {
+            p.done();
+        }
+        self.players.clear();
+    }
+
     pub fn add_player(&mut self, p: Box<dyn Player>) {
         self.players.push(p);
     }
@@ -207,6 +266,7 @@ impl Table {
     fn pre_roll(&mut self) {
         for p in &mut self.players {
             p.make_bets(&self.state);
+            p.record_activity();
         }
     }
 
@@ -250,5 +310,31 @@ impl fmt::Display for TableState {
             "TableState<point={:?} last_roll={:?}>",
             self.point, self.last_roll
         )
+    }
+}
+
+pub struct BankrollRecorder {
+    file: Box<dyn io::Write>,
+}
+
+impl BankrollRecorder {
+    pub fn new(fname: &str) -> io::Result<Self> {
+        let f = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(fname)?;
+        Ok(Self {
+            file: Box::new(io::BufWriter::new(f)),
+        })
+    }
+}
+
+impl PlayerRecorder for BankrollRecorder {
+    fn record(&mut self, bank: &u32, _wage: &u32, _bets: &Vec<Bet>) {
+        let _ = write!(self.file, "{}\n", bank);
+    }
+
+    fn done(&mut self) {
+        let _ = self.file.flush();
     }
 }

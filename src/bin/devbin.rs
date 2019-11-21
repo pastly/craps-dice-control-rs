@@ -1,7 +1,7 @@
 use cdc2::buffer::CharWhitelistIter;
 use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
-use cdc2::table::{FieldPlayer, PassPlayer, Table};
+use cdc2::table::{BankrollRecorder, FieldPlayer, PassPlayer, Player, Table};
 use std::io::{self, Read};
 
 struct RollReader<R>
@@ -83,12 +83,14 @@ fn main() {
     //}
     //println!("---------");
     let mut table = Table::new(Box::new(roll_gen));
-    table.add_player(Box::new(FieldPlayer::new(500)));
+    let mut field = FieldPlayer::new(500);
+    field.attach_recorder(Box::new(BankrollRecorder::new("bankroll.txt").unwrap()));
+    table.add_player(Box::new(field));
     table.add_player(Box::new(PassPlayer::new(500)));
-    table.loop_once();
-    table.loop_once();
-    table.loop_once();
-    table.loop_once();
+    for _ in 0..10 {
+        table.loop_once();
+    }
+    table.done();
     //let b = Bet::new_buy(10, 4);
     //println!("{:?}", b);
 }
