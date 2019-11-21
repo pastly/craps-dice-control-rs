@@ -1,4 +1,3 @@
-use serde::Serialize;
 use crate::bet::{Bet, BetType};
 use crate::randroll::RollGen;
 use crate::roll::Roll;
@@ -381,7 +380,8 @@ impl PlayerRecorder for BankrollRecorder {
     }
 
     fn done(&mut self) {
-        writeln!(self.file, "{}", serde_json::to_string(&self.data).unwrap());
+        let _ = writeln!(self.file, "{}", serde_json::to_string(&self.data).unwrap());
+        self.data.clear();
         //let _ = self.file.flush();
     }
 }
