@@ -82,15 +82,18 @@ fn main() {
     //    println!("{:?}", r);
     //}
     //println!("---------");
-    let mut table = Table::new(Box::new(roll_gen));
-    let mut field = FieldPlayer::new(500);
-    field.attach_recorder(Box::new(BankrollRecorder::new("bankroll.txt").unwrap()));
-    table.add_player(Box::new(field));
-    table.add_player(Box::new(PassPlayer::new(500)));
-    for _ in 0..1000 {
-        table.loop_once();
-    }
-    table.done();
+    let _: Vec<_> = (0..2).map(|_| {
+        let roll_gen = DieWeights::new_weights2(d1, d2);
+        let mut table = Table::new(Box::new(roll_gen));
+        let mut field = FieldPlayer::new(500);
+        field.attach_recorder(Box::new(BankrollRecorder::new("bankroll.json").unwrap()));
+        table.add_player(Box::new(field));
+        table.add_player(Box::new(PassPlayer::new(500)));
+        for _ in 0..10 {
+            table.loop_once();
+        }
+        table.done();
+    }).collect();
     //let b = Bet::new_buy(10, 4);
     //println!("{:?}", b);
 }

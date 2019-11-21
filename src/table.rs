@@ -364,6 +364,7 @@ impl BankrollRecorder {
     pub fn new(fname: &str) -> io::Result<Self> {
         let f = fs::OpenOptions::new()
             .write(true)
+            .append(true)
             .create(true)
             .open(fname)?;
         Ok(Self {
