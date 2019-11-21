@@ -1,3 +1,4 @@
+use serde::Serialize;
 use crate::bet::{Bet, BetType};
 use crate::randroll::RollGen;
 use crate::roll::Roll;
@@ -279,6 +280,9 @@ impl Table {
     }
 
     pub fn loop_once(&mut self) {
+        if self.players.is_empty() {
+            return;
+        }
         self.pre_roll();
         self.roll();
         self.post_roll();
@@ -354,6 +358,7 @@ impl fmt::Display for TableState {
 
 pub struct BankrollRecorder {
     file: Box<dyn io::Write>,
+    data: Vec<u32>,
 }
 
 impl BankrollRecorder {
@@ -364,16 +369,19 @@ impl BankrollRecorder {
             .open(fname)?;
         Ok(Self {
             file: Box::new(io::BufWriter::new(f)),
+            data: vec![],
         })
     }
 }
 
 impl PlayerRecorder for BankrollRecorder {
     fn record(&mut self, bank: u32, _wage: u32, _bets: &[Bet]) {
-        let _ = writeln!(self.file, "{}", bank);
+        //let _ = writeln!(self.file, "{} {}", self.roll_num, bank);
+        self.data.push(bank);
     }
 
     fn done(&mut self) {
-        let _ = self.file.flush();
+        writeln!(self.file, "{}", serde_json::to_string(&self.data).unwrap());
+        //let _ = self.file.flush();
     }
 }
