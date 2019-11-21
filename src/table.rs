@@ -49,15 +49,6 @@ struct PlayerCommon {
     recorder: Option<Box<dyn PlayerRecorder>>,
 }
 
-impl PartialEq for PlayerCommon {
-    fn eq(&self, other: &Self) -> bool {
-        self.bets == other.bets
-            && self.bankroll == other.bankroll
-            && self.wagered == other.wagered
-            && self.recorder.is_some() == other.recorder.is_some()
-    }
-}
-
 impl PlayerCommon {
     fn new(bankroll: u32) -> Self {
         Self {
