@@ -236,7 +236,7 @@ impl PassPlayer {
 
 impl Player for PassPlayer {
     fn make_bets(&mut self, _state: &TableState) -> Result<(), PlayerError> {
-        let ret = match self.common.bets.len() {
+        match self.common.bets.len() {
             0 => self.common.add_bet(Bet::new_pass(5)),
             1 => {
                 let other = self.common.bets[0];
@@ -247,9 +247,8 @@ impl Player for PassPlayer {
                 ))
             }
             _ => Ok(()),
-        };
+        }
         //eprintln!("{}", self.common);
-        ret
     }
 
     fn done(&mut self) {
@@ -326,7 +325,7 @@ impl Table {
                 p.record_activity();
                 // If we want to remove it, tell the player it is done and neglect to add it to the
                 // keep vector
-                if let Err(e) = res {
+                if let Err(_e) = res {
                     //eprintln!("Considering player finished because {}", e);
                     p.done();
                     finished.push(p);

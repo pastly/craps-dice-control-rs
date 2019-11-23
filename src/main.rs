@@ -4,9 +4,8 @@ use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
-use rayon::prelude::*;
 use std::fs::OpenOptions;
-use std::io::{self, Read};
+use std::io::Read;
 
 struct RollReader<R>
 where
@@ -231,7 +230,7 @@ fn main() {
         )
         .get_matches();
     let _config = args.value_of("config").unwrap();
-    let res = if let Some(args) = args.subcommand_matches("simulate") {
+    let _res = if let Some(args) = args.subcommand_matches("simulate") {
         simulate(args)
     } else if let Some(args) = args.subcommand_matches("parserolls") {
         parse_rolls(args)
@@ -242,10 +241,12 @@ fn main() {
         eprintln!("Unknown subcommand {}", args.subcommand_name().unwrap());
         Err(())
     };
-    match res {
-        Err(_) => {}
-        Ok(_) => {}
-    }
+    // do something with the result of the subcommand's function
+    //match res {
+    //    Err(_) => {}
+    //    Ok(_) => {}
+    //}
+
     //let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
     ////let outputs: Vec<String> = (0..10000).into_par_iter().map(|_| {
     //let outputs: Vec<String> = (0..100)

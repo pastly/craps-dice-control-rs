@@ -89,7 +89,7 @@ impl DieWeights {
         Self {
             dist1: dist.clone(),
             dist2: dist,
-            given1: w.clone(),
+            given1: w,
             given2: w,
         }
     }
@@ -141,7 +141,7 @@ impl<'de> Deserialize<'de> for RollWeights {
         D: Deserializer<'de>,
     {
         let mut w = [0; 11];
-        let mut v: Vec<u64> = Vec::deserialize(deserializer)?;
+        let v: Vec<u64> = Vec::deserialize(deserializer)?;
         assert_eq!(v.len(), 11);
         for (i, val) in v.iter().enumerate() {
             w[i] = *val;
