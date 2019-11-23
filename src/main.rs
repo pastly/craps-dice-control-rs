@@ -1,5 +1,5 @@
 use cdc2::buffer::CharWhitelistIter;
-use cdc2::global::{conf_def, BINNAME, VERSION};
+use cdc2::global::conf_def;
 use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
