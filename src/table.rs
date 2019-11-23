@@ -5,8 +5,6 @@ use std::default::Default;
 use std::error::Error;
 use std::fmt;
 
-//const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
-//const FIELD_PAYS: [u8; 7] = [2, 1, 1, 1, 1, 1, 2];
 const POINTS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
@@ -92,7 +90,6 @@ impl PlayerCommon {
         self.wagered += b.amount();
         // add to list of bets
         self.bets.push(b);
-        //eprintln!("{}", self);
         Ok(())
     }
 
@@ -150,7 +147,6 @@ impl PlayerCommon {
                 }
             })
             .collect();
-        //eprintln!("{}", self);
     }
 
     fn record_activity(&mut self) {
@@ -240,18 +236,20 @@ impl PassPlayer {
 
 impl Player for PassPlayer {
     fn make_bets(&mut self, _state: &TableState) -> Result<(), PlayerError> {
-        match self.common.bets.len() {
+        let ret = match self.common.bets.len() {
             0 => self.common.add_bet(Bet::new_pass(5)),
             1 => {
                 let other = self.common.bets[0];
                 assert!(other.point().is_some());
                 self.common.add_bet(Bet::new_passodds(
-                    other.amount() * 10,
+                    other.amount() * 5,
                     other.point().unwrap(),
                 ))
             }
             _ => Ok(()),
-        }
+        };
+        //eprintln!("{}", self.common);
+        ret
     }
 
     fn done(&mut self) {
@@ -343,7 +341,6 @@ impl Table {
 
     fn roll(&mut self) {
         let r = self.roll_gen.gen();
-        //eprintln!("Roll is {}", r);
         self.state.last_roll = Some(r);
     }
 
@@ -392,7 +389,9 @@ pub struct BankrollRecorder {
 
 impl BankrollRecorder {
     pub fn new() -> Self {
-        Self { ..Default::default() }
+        Self {
+            ..Default::default()
+        }
     }
 }
 

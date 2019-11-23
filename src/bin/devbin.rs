@@ -1,8 +1,9 @@
 use cdc2::buffer::CharWhitelistIter;
 use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
-use cdc2::table::{BankrollRecorder, FieldPlayer, PassPlayer, Player, Table};
+use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use std::io::{self, Read};
+use rayon::prelude::*;
 
 struct RollReader<R>
 where
@@ -62,14 +63,14 @@ where
 
 fn main() {
     let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
-    let outputs: Vec<String> = (0..1000).map(|_| {
+    //let outputs: Vec<String> = (0..10000).into_par_iter().map(|_| {
+    let outputs: Vec<String> = (0..1).into_par_iter().map(|_| {
         let mut output = String::new();
         let roll_gen = DieWeights::new_weights2(d1, d2);
         let mut table = Table::new(Box::new(roll_gen));
-        let mut field = FieldPlayer::new(500);
-        field.attach_recorder(Box::new(BankrollRecorder::new()));
-        table.add_player(Box::new(field));
-        //table.add_player(Box::new(PassPlayer::new(500)));
+        let mut p = PassPlayer::new(500);
+        p.attach_recorder(Box::new(BankrollRecorder::new()));
+        table.add_player(Box::new(p));
         for _ in 0..1000 {
             let finished_players = table.loop_once();
             for p in finished_players {
