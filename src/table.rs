@@ -1,7 +1,7 @@
 use crate::bet::{Bet, BetType};
+use crate::global::POINTS;
 use crate::randroll::RollGen;
 use crate::roll::Roll;
-use crate::global::POINTS;
 use std::default::Default;
 use std::error::Error;
 use std::fmt;

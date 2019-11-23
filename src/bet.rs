@@ -1,5 +1,5 @@
-use crate::roll::Roll;
 use crate::global::{FIELD, POINTS};
+use crate::roll::Roll;
 use std::error::Error;
 use std::fmt;
 
