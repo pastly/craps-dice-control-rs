@@ -1,6 +1,6 @@
 use cdc2::buffer::CharWhitelistIter;
 use cdc2::global::conf_def;
-use cdc2::randroll::{RollGen, RollWeights, DieWeights};
+use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
@@ -91,7 +91,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 eprintln!("Error parsing RollWeights from {}: {}", fname, e);
                 return Err(());
             }
-            Ok(w) => w
+            Ok(w) => w,
         };
         Box::new(w)
     } else if let Some(fname) = args.value_of("dieweights") {
@@ -107,7 +107,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 eprintln!("Error parsing DieWeights from {}: {}", fname, e);
                 return Err(());
             }
-            Ok(w) => w
+            Ok(w) => w,
         };
         Box::new(w)
     } else {
@@ -173,7 +173,7 @@ fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
             eprintln!("Error serializing or writing to file: {}", e);
             Err(())
         }
-        Ok(_) => Ok(())
+        Ok(_) => Ok(()),
     }
 }
 
