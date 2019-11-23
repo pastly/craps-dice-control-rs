@@ -4,6 +4,7 @@ use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
+use rayon::prelude::*;
 use std::fs::OpenOptions;
 use std::io::Read;
 
@@ -74,10 +75,8 @@ where
     d
 }
 
-fn simulate(args: &ArgMatches) -> Result<(), ()> {
-    // Determine what type of input weights the user specified, and create a roll generator based
-    // on that
-    let roll_gen: Box<dyn RollGen> = if let Some(fname) = args.value_of("rollweights") {
+fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
+    if let Some(fname) = args.value_of("rollweights") {
         let fd = match OpenOptions::new().read(true).open(fname) {
             Err(e) => {
                 eprintln!("Error opening input --roll-weights {}: {}", fname, e);
@@ -92,7 +91,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             }
             Ok(w) => w,
         };
-        Box::new(w)
+        Ok(Box::new(w))
     } else if let Some(fname) = args.value_of("dieweights") {
         let fd = match OpenOptions::new().read(true).open(fname) {
             Err(e) => {
@@ -108,26 +107,40 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             }
             Ok(w) => w,
         };
-        Box::new(w)
+        Ok(Box::new(w))
     } else {
         unimplemented!();
-    };
-    let mut table = Table::new(roll_gen);
-    let mut p = PassPlayer::new(50000);
-    let mut output = String::new();
-    p.attach_recorder(Box::new(BankrollRecorder::new()));
-    table.add_player(Box::new(p));
-    for _ in 0..10 {
-        let finished_players = table.loop_once();
-        for p in finished_players {
-            output += p.recorder_output();
-        }
     }
-    let finished_players = table.done();
-    for p in finished_players {
-        output += p.recorder_output();
+}
+
+fn simulate(args: &ArgMatches) -> Result<(), ()> {
+    let mut outputs: Vec<Result<String, ()>> = (0..10000)
+        .into_par_iter()
+        .map(|_| {
+            let mut output = String::new();
+            let roll_gen = match get_roll_gen(args) {
+                Ok(rg) => rg,
+                Err(_) => return Err(()),
+            };
+            let mut table = Table::new(roll_gen);
+            let mut p = PassPlayer::new(50000);
+            p.attach_recorder(Box::new(BankrollRecorder::new()));
+            table.add_player(Box::new(p));
+            for _ in 0..1000 {
+                let finished_players = table.loop_once();
+                for p in finished_players {
+                    output += p.recorder_output();
+                }
+            }
+            let finished_players = table.done();
+            for p in finished_players {
+                output += p.recorder_output();
+            }
+            Ok(output)
+        }).collect();
+    for o in outputs.drain(0..).filter_map(|o| o.ok()) {
+        println!("{}", o);
     }
-    println!("{}", output);
     Ok(())
 }
 
@@ -201,7 +214,7 @@ fn main() {
                         .value_name("FILE"),
                 )
                 .group(
-                    ArgGroup::with_name("fmt")
+                    ArgGroup::with_name("infmt")
                         .args(&["dieweights", "rollweights"])
                         .required(true),
                 ),
@@ -241,37 +254,4 @@ fn main() {
         eprintln!("Unknown subcommand {}", args.subcommand_name().unwrap());
         Err(())
     };
-    // do something with the result of the subcommand's function
-    //match res {
-    //    Err(_) => {}
-    //    Ok(_) => {}
-    //}
-
-    //let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
-    ////let outputs: Vec<String> = (0..10000).into_par_iter().map(|_| {
-    //let outputs: Vec<String> = (0..100)
-    //    .into_par_iter()
-    //    .map(|_| {
-    //        let mut output = String::new();
-    //        let roll_gen = DieWeights::new_weights2(d1, d2);
-    //        let mut table = Table::new(Box::new(roll_gen));
-    //        let mut p = PassPlayer::new(500000);
-    //        p.attach_recorder(Box::new(BankrollRecorder::new()));
-    //        table.add_player(Box::new(p));
-    //        for _ in 0..1000 {
-    //            let finished_players = table.loop_once();
-    //            for p in finished_players {
-    //                output += p.recorder_output();
-    //            }
-    //        }
-    //        let finished_players = table.done();
-    //        for p in finished_players {
-    //            output += p.recorder_output();
-    //        }
-    //        output
-    //    })
-    //    .collect();
-    //for o in outputs {
-    //    println!("{}", o);
-    //}
 }
