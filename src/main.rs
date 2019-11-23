@@ -8,6 +8,25 @@ use rayon::prelude::*;
 use std::fs::OpenOptions;
 use std::io::Read;
 
+/// Validates the given expression can be parsed as the given type following clap's convention:
+/// Return Ok(()) if yes, else Err(string_describing_the_problem)
+macro_rules! validate_as {
+    ($T:ty, $V:expr) => {
+        match $V.parse::<$T>() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    };
+}
+
+/// Assuming you have previously validated the given expression can be parsed successfully as the
+/// give type, this saves a tiny bit of typing and hides the unwrap
+macro_rules! parse_as {
+    ($T:ty, $V:expr) => {
+        $V.parse::<$T>().unwrap()
+    };
+}
+
 struct RollReader<R>
 where
     R: Read,
@@ -114,7 +133,10 @@ fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
 }
 
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
-    let mut outputs: Vec<Result<String, ()>> = (0..10000)
+    let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
+    let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
+    let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
+    let mut outputs: Vec<Result<String, ()>> = (0..num_games)
         .into_par_iter()
         .map(|_| {
             let mut output = String::new();
@@ -123,10 +145,10 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 Err(_) => return Err(()),
             };
             let mut table = Table::new(roll_gen);
-            let mut p = PassPlayer::new(50000);
+            let mut p = PassPlayer::new(bank);
             p.attach_recorder(Box::new(BankrollRecorder::new()));
             table.add_player(Box::new(p));
-            for _ in 0..1000 {
+            for _ in 0..num_rolls {
                 let finished_players = table.loop_once();
                 for p in finished_players {
                     output += p.recorder_output();
@@ -137,7 +159,8 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 output += p.recorder_output();
             }
             Ok(output)
-        }).collect();
+        })
+        .collect();
     for o in outputs.drain(0..).filter_map(|o| o.ok()) {
         println!("{}", o);
     }
@@ -217,6 +240,30 @@ fn main() {
                     ArgGroup::with_name("infmt")
                         .args(&["dieweights", "rollweights"])
                         .required(true),
+                )
+                .arg(
+                    Arg::with_name("bankroll")
+                        .long("starting-bankroll")
+                        .value_name("AMT")
+                        .default_value(conf_def::STARTING_BANKROLL)
+                        .validator(|v| validate_as!(u32, v))
+                        .help("Amount of money to start with"),
+                )
+                .arg(
+                    Arg::with_name("numrolls")
+                        .long("num-rolls")
+                        .value_name("N")
+                        .default_value(conf_def::NUM_ROLLS)
+                        .validator(|v| validate_as!(u32, v))
+                        .help("Maximum game length"),
+                )
+                .arg(
+                    Arg::with_name("numgames")
+                        .long("num-games")
+                        .value_name("N")
+                        .default_value(conf_def::NUM_GAMES)
+                        .validator(|v| validate_as!(u32, v))
+                        .help("How many games to simulate"),
                 ),
         )
         .subcommand(
