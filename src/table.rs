@@ -62,7 +62,7 @@ impl PlayerCommon {
     }
 
     fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
-        eprintln!("{} making {}", self, b);
+        //eprintln!("{} making {}", self, b);
         // make sure there is no bet of this type already
         assert_eq!(
             self.bets
@@ -94,7 +94,7 @@ impl PlayerCommon {
     }
 
     fn react_to_roll(&mut self, table_state: &TableState) {
-        eprintln!("Player reacting to {}", table_state);
+        //eprintln!("Player reacting to {}", table_state);
         assert!(table_state.last_roll.is_some());
         // must have last roll bc of assert
         let r = table_state.last_roll.unwrap();
@@ -114,12 +114,12 @@ impl PlayerCommon {
             }
             for b in wins.iter() {
                 let winnings = b.win_amount(r).unwrap();
-                eprintln!("Player won {} from {}", winnings, b);
+                //eprintln!("Player won {} from {}", winnings, b);
                 self.bankroll += winnings + b.amount();
                 self.wagered -= b.amount();
             }
             for b in losses.iter() {
-                eprintln!("Player lost {}", b);
+                //eprintln!("Player lost {}", b);
                 self.wagered -= b.amount();
             }
         }
@@ -306,7 +306,7 @@ impl Table {
         let finished = self.pre_roll();
         self.roll();
         self.post_roll();
-        eprintln!("------");
+        //eprintln!("------");
         finished
     }
 
@@ -327,7 +327,7 @@ impl Table {
                 // If we want to remove it, tell the player it is done and neglect to add it to the
                 // keep vector
                 if let Err(e) = res {
-                    eprintln!("Considering player finished because {}", e);
+                    //eprintln!("Considering player finished because {}", e);
                     p.done();
                     finished.push(p);
                 } else {

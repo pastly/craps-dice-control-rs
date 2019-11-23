@@ -64,11 +64,11 @@ where
 fn main() {
     let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
     //let outputs: Vec<String> = (0..10000).into_par_iter().map(|_| {
-    let outputs: Vec<String> = (0..1).into_par_iter().map(|_| {
+    let outputs: Vec<String> = (0..100).into_par_iter().map(|_| {
         let mut output = String::new();
         let roll_gen = DieWeights::new_weights2(d1, d2);
         let mut table = Table::new(Box::new(roll_gen));
-        let mut p = PassPlayer::new(500);
+        let mut p = PassPlayer::new(500000);
         p.attach_recorder(Box::new(BankrollRecorder::new()));
         table.add_player(Box::new(p));
         for _ in 0..1000 {
