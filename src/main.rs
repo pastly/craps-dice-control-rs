@@ -3,7 +3,7 @@ use cdc2::global::{conf_def, BINNAME, VERSION};
 use cdc2::randroll::DieWeights;
 use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
-use clap::{App, Arg};
+use clap::{App, Arg, SubCommand, crate_version, crate_name};
 use rayon::prelude::*;
 use std::io::{self, Read};
 
@@ -64,8 +64,8 @@ where
 }
 
 fn main() {
-    let matches = App::new(BINNAME)
-        .version(VERSION)
+    let matches = App::new(crate_name!())
+        .version(crate_version!())
         .arg(
             Arg::with_name("config")
                 .short("c")
@@ -74,9 +74,18 @@ fn main() {
                 .help("Specify configuration file")
                 .takes_value(true),
         )
+        .subcommand(SubCommand::with_name("sim")
+                    .about("Run craps game simulations"))
+        .subcommand(SubCommand::with_name("foo")
+                    .about("Do something else"))
         .get_matches();
     let config = matches.value_of("config").unwrap_or(conf_def::CONFIG);
     eprintln!("The config is {}", config);
+    if let Some(matches) = matches.subcommand_matches("sim") {
+        eprintln!("Will do sim");
+    } else if let Some(matches) = matches.subcommand_matches("foo") {
+        eprintln!("Will do foo");
+    }
     let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
     //let outputs: Vec<String> = (0..10000).into_par_iter().map(|_| {
     let outputs: Vec<String> = (0..100)
