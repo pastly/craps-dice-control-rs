@@ -1,11 +1,11 @@
 use crate::bet::{Bet, BetType};
 use crate::randroll::RollGen;
 use crate::roll::Roll;
+use crate::global::POINTS;
 use std::default::Default;
 use std::error::Error;
 use std::fmt;
 
-const POINTS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
 

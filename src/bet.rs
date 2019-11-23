@@ -1,4 +1,5 @@
 use crate::roll::Roll;
+use crate::global::{FIELD, POINTS};
 use std::error::Error;
 use std::fmt;
 
@@ -60,13 +61,11 @@ impl fmt::Display for BetError {
     }
 }
 
-const FIELD_NUMS: [u8; 7] = [2, 3, 4, 9, 10, 11, 12];
 const FIELD_TRIP_2: bool = false;
 const FIELD_TRIP_12: bool = false;
 const FIELD_DOUB_11: bool = false;
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
-const POINT_NUMS: [u8; 6] = [4, 5, 6, 8, 9, 10];
 
 impl Bet {
     fn new(bet_type: BetType, working: bool, amount: u32, point: Option<u8>) -> Bet {
@@ -151,7 +150,7 @@ impl Bet {
 
     fn _set_point(bet: Bet, point: u8) -> Bet {
         assert!(bet.point == None);
-        assert!(POINT_NUMS.iter().find(|&x| *x == point) != None);
+        assert!(POINTS.iter().find(|&x| *x == point) != None);
         let mut b = bet;
         b.point = Some(point);
         b
@@ -207,7 +206,7 @@ impl Bet {
                 assert!(self.point.is_some());
                 r.value() == 7
             }
-            BetType::Field => FIELD_NUMS.contains(&r.value()),
+            BetType::Field => FIELD.contains(&r.value()),
         }
     }
 
@@ -250,7 +249,7 @@ impl Bet {
                 // loses on point
                 r.value() == self.point.unwrap()
             }
-            BetType::Field => !FIELD_NUMS.contains(&r.value()),
+            BetType::Field => !FIELD.contains(&r.value()),
             BetType::Lay => {
                 assert!(self.point.is_some());
                 // loses on point
@@ -458,7 +457,7 @@ mod tests {
 
     #[test]
     fn wins_with() {
-        use super::{FIELD_NUMS, POINT_NUMS};
+        use crate::global::{FIELD, POINTS};
         for bet_type in BetTypeIter::new() {
             for roll in all_rolls() {
                 let amt = 500;
@@ -471,7 +470,7 @@ mod tests {
                         };
                         let expect = roll.value() == 7 || roll.value() == 11;
                         assert_eq!(b.wins_with(roll), expect);
-                        if !POINT_NUMS.contains(&roll.value()) {
+                        if !POINTS.contains(&roll.value()) {
                             continue;
                         }
                         let b = Bet::set_point(b, roll.value()).unwrap();
@@ -485,14 +484,14 @@ mod tests {
                         };
                         let expect = roll.value() == 2 || roll.value() == 3;
                         assert_eq!(b.wins_with(roll), expect);
-                        if !POINT_NUMS.contains(&roll.value()) {
+                        if !POINTS.contains(&roll.value()) {
                             continue;
                         }
                         let b = Bet::set_point(b, roll.value()).unwrap();
                         assert!(b.wins_with(Roll::new([3, 4]).unwrap()));
                     }
                     BetType::PassOdds | BetType::ComeOdds | BetType::Place | BetType::Buy => {
-                        let point = if POINT_NUMS.contains(&roll.value()) {
+                        let point = if POINTS.contains(&roll.value()) {
                             roll.value()
                         } else {
                             4
@@ -511,7 +510,7 @@ mod tests {
                         assert_eq!(b.wins_with(roll), expect);
                     }
                     BetType::DontPassOdds | BetType::DontComeOdds | BetType::Lay => {
-                        let point = if POINT_NUMS.contains(&roll.value()) {
+                        let point = if POINTS.contains(&roll.value()) {
                             roll.value()
                         } else {
                             4
@@ -529,7 +528,7 @@ mod tests {
                     }
                     BetType::Field => {
                         let b = Bet::new_field(amt);
-                        let expect = FIELD_NUMS.contains(&roll.value());
+                        let expect = FIELD.contains(&roll.value());
                         assert_eq!(b.wins_with(roll), expect);
                     }
                 }

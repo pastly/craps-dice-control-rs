@@ -4,6 +4,8 @@ use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use std::io::{self, Read};
 use rayon::prelude::*;
+use clap::{App, Arg};
+use cdc2::global::{VERSION, BINNAME, ConfDef};
 
 struct RollReader<R>
 where
@@ -62,6 +64,17 @@ where
 }
 
 fn main() {
+    let matches = App::new(BINNAME)
+        .version(VERSION)
+        .arg(Arg::with_name("config")
+             .short("c")
+             .long("config")
+             .value_name("FILE")
+             .help("Specify configuration file")
+             .takes_value(true))
+        .get_matches();
+    let config = matches.value_of("config").unwrap_or(ConfDef::CONFIG);
+    eprintln!("The config is {}", config);
     let (d1, d2) = die_weights_from_roll_iter(RollReader::new(io::stdin()));
     //let outputs: Vec<String> = (0..10000).into_par_iter().map(|_| {
     let outputs: Vec<String> = (0..100).into_par_iter().map(|_| {
