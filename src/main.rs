@@ -1,12 +1,12 @@
 use cdc2::buffer::CharWhitelistIter;
 use cdc2::global::conf_def;
-use cdc2::randroll::DieWeights;
+use cdc2::randroll::{RollGen, RollWeights, DieWeights};
 use cdc2::roll::Roll;
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
-use clap::{crate_name, crate_version, App, Arg, ArgMatches, SubCommand};
+use clap::{crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use std::fs::OpenOptions;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 
 struct RollReader<R>
 where
@@ -76,7 +76,60 @@ where
 }
 
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
-    Err(())
+    // Determine what type of input weights the user specified, and create a roll generator based
+    // on that
+    let roll_gen: Box<dyn RollGen> = if let Some(fname) = args.value_of("rollweights") {
+        let fd = match OpenOptions::new().read(true).open(fname) {
+            Err(e) => {
+                eprintln!("Error opening input --roll-weights {}: {}", fname, e);
+                return Err(());
+            }
+            Ok(fd) => fd,
+        };
+        let w: RollWeights = match serde_json::from_reader(fd) {
+            Err(e) => {
+                eprintln!("Error parsing RollWeights from {}: {}", fname, e);
+                return Err(());
+            }
+            Ok(w) => w
+        };
+        Box::new(w)
+    } else if let Some(fname) = args.value_of("dieweights") {
+        let fd = match OpenOptions::new().read(true).open(fname) {
+            Err(e) => {
+                eprintln!("Error opening input --die-weights {}: {}", fname, e);
+                return Err(());
+            }
+            Ok(fd) => fd,
+        };
+        let w: DieWeights = match serde_json::from_reader(fd) {
+            Err(e) => {
+                eprintln!("Error parsing DieWeights from {}: {}", fname, e);
+                return Err(());
+            }
+            Ok(w) => w
+        };
+        Box::new(w)
+    } else {
+        unimplemented!();
+    };
+    let mut table = Table::new(roll_gen);
+    let mut p = PassPlayer::new(50000);
+    let mut output = String::new();
+    p.attach_recorder(Box::new(BankrollRecorder::new()));
+    table.add_player(Box::new(p));
+    for _ in 0..10 {
+        let finished_players = table.loop_once();
+        for p in finished_players {
+            output += p.recorder_output();
+        }
+    }
+    let finished_players = table.done();
+    for p in finished_players {
+        output += p.recorder_output();
+    }
+    println!("{}", output);
+    Ok(())
 }
 
 fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
@@ -92,7 +145,7 @@ fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
         Ok(fd) => fd,
     };
     // Open out file, exit early if can't
-    let mut out_fd = match OpenOptions::new().write(true).open(out_fname) {
+    let out_fd = match OpenOptions::new().write(true).open(out_fname) {
         Err(e) => {
             eprintln!("Error opening output file {}: {}", out_fname, e);
             return Err(());
@@ -103,32 +156,24 @@ fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
     let rolls = RollReader::new(in_fd);
     // unwrap ok: clap should have complained
     let outfmt = args.value_of("outfmt").unwrap();
-    // Based on what the desired out format is, parse the input into a single Result<String>
-    let s = if outfmt == "dieweights" {
+    // Based on what the desired out format is, parse the rolls into it and try to serialize +
+    // write it to the out file
+    let res = if outfmt == "dieweights" {
         let (d1, d2) = die_weights_from_roll_iter(rolls);
         let d = DieWeights::new_weights2(d1, d2);
-        serde_json::to_string(&d)
+        serde_json::to_writer(out_fd, &d)
     } else if outfmt == "rollweights" {
         let d = roll_weights_from_roll_iter(rolls);
-        serde_json::to_string(&d)
+        serde_json::to_writer(out_fd, &d)
     } else {
         unimplemented!();
     };
-    // Get String out, or return early
-    let s = match s {
-        Ok(s) => s,
+    match res {
         Err(e) => {
-            eprintln!("Unable to serialize {}: {}", outfmt, e);
-            return Err(());
-        }
-    };
-    // Write string to out file, or log error
-    match out_fd.write_all(s.as_bytes()) {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            eprintln!("Error writing serlized data to {}: {}", out_fname, e);
+            eprintln!("Error serializing or writing to file: {}", e);
             Err(())
         }
+        Ok(_) => Ok(())
     }
 }
 
@@ -143,7 +188,25 @@ fn main() {
                 .default_value(conf_def::CONFIG)
                 .global(true),
         )
-        .subcommand(SubCommand::with_name("simulate").about("Run craps game simulations"))
+        .subcommand(
+            SubCommand::with_name("simulate")
+                .about("Run craps game simulations")
+                .arg(
+                    Arg::with_name("dieweights")
+                        .long("die-weights")
+                        .value_name("FILE"),
+                )
+                .arg(
+                    Arg::with_name("rollweights")
+                        .long("roll-weights")
+                        .value_name("FILE"),
+                )
+                .group(
+                    ArgGroup::with_name("fmt")
+                        .args(&["dieweights", "rollweights"])
+                        .required(true),
+                ),
+        )
         .subcommand(
             SubCommand::with_name("parserolls")
                 .about("Input rolls and output a parsed format for use with other commands")
