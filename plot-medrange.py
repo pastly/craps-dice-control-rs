@@ -145,7 +145,7 @@ def plot(
         stats_d.keys(), per_5, per_0, color=lowest_color, label='bottom 5%')
     plt.xlim(left=0, right=max(stats_d.keys()))
     ymag = max(max(per_100), -1 * min(per_0))
-    plt.ylim(top=ymag, bottom=0)
+    # plt.ylim(top=ymag, bottom=-1*ymag)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.legend(loc='best', fontsize=8)
