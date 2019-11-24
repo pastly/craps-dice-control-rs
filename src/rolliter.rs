@@ -1,26 +1,26 @@
-use crate::roll::Roll;
 use crate::buffer::CharWhitelistIter;
+use crate::roll::Roll;
 use std::io::Read;
 
-pub struct RollReader<R>
+pub struct RollIter<R>
 where
     R: Read,
 {
     input: CharWhitelistIter<R>,
 }
 
-impl<R> RollReader<R>
+impl<R> RollIter<R>
 where
     R: Read,
 {
     pub fn new(input: R) -> Self {
-        RollReader {
+        Self {
             input: CharWhitelistIter::new(input, "123456"),
         }
     }
 }
 
-impl<R> Iterator for RollReader<R>
+impl<R> Iterator for RollIter<R>
 where
     R: Read,
 {
@@ -45,7 +45,7 @@ where
     }
 }
 
-pub fn die_weights_from_roll_iter<I>(rolls: I) -> ([u64; 6], [u64; 6])
+pub fn die_weights_from_iter<I>(rolls: I) -> ([u64; 6], [u64; 6])
 where
     I: Iterator<Item = Roll>,
 {
@@ -58,7 +58,7 @@ where
     (d1, d2)
 }
 
-pub fn roll_weights_from_roll_iter<I>(rolls: I) -> [u64; 11]
+pub fn roll_weights_from_iter<I>(rolls: I) -> [u64; 11]
 where
     I: Iterator<Item = Roll>,
 {

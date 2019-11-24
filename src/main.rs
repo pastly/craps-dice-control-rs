@@ -1,10 +1,10 @@
 use cdc2::global::conf_def;
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
+use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use std::fs::OpenOptions;
-use cdc2::rollreader::{RollReader, die_weights_from_roll_iter, roll_weights_from_roll_iter};
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -119,17 +119,17 @@ fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
         Ok(fd) => fd,
     };
     // iterator over all the rolls parsed from the in file
-    let rolls = RollReader::new(in_fd);
+    let rolls = RollIter::new(in_fd);
     // unwrap ok: clap should have complained
     let outfmt = args.value_of("outfmt").unwrap();
     // Based on what the desired out format is, parse the rolls into it and try to serialize +
     // write it to the out file
     let res = if outfmt == "dieweights" {
-        let (d1, d2) = die_weights_from_roll_iter(rolls);
+        let (d1, d2) = die_weights_from_iter(rolls);
         let d = DieWeights::new_weights2(d1, d2);
         serde_json::to_writer(out_fd, &d)
     } else if outfmt == "rollweights" {
-        let d = roll_weights_from_roll_iter(rolls);
+        let d = roll_weights_from_iter(rolls);
         serde_json::to_writer(out_fd, &d)
     } else {
         unimplemented!();
