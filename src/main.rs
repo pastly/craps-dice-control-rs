@@ -5,6 +5,7 @@ use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use std::fs::OpenOptions;
+use serde_json::{json, Value};
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -30,6 +31,14 @@ arg_enum!{
     enum ParseRollsOutFmt {
         DieWeights,
         RollWeights,
+    }
+}
+
+arg_enum!{
+    #[derive(PartialEq, Debug)]
+    enum SimulateOutFmt {
+        BankrollVsTime,
+        BankrollVsTimeMedrange,
     }
 }
 
@@ -76,34 +85,47 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
     let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
-    let mut outputs: Vec<Result<String, ()>> = (0..num_games)
+    let outfmt = parse_as!(SimulateOutFmt, args.value_of("outfmt").unwrap());
+    let mut outputs: Vec<Result<Value, ()>> = (0..num_games)
         .into_par_iter()
         .map(|_| {
-            let mut output = String::new();
+            let recorder = Box::new(match outfmt {
+                SimulateOutFmt::BankrollVsTime => BankrollRecorder::new(),
+                _ => unimplemented!()
+            });
             let roll_gen = match get_roll_gen(args) {
                 Ok(rg) => rg,
                 Err(_) => return Err(()),
             };
             let mut table = Table::new(roll_gen);
             let mut p = PassPlayer::new(bank);
-            p.attach_recorder(Box::new(BankrollRecorder::new()));
+            p.attach_recorder(recorder);
             table.add_player(Box::new(p));
             for _ in 0..num_rolls {
                 let finished_players = table.loop_once();
-                for p in finished_players {
-                    output += p.recorder_output();
+                if finished_players.len() > 0 {
+                    assert_eq!(finished_players.len(), 1);
+                    return Ok(finished_players[0].recorder_output());
                 }
             }
             let finished_players = table.done();
-            for p in finished_players {
-                output += p.recorder_output();
-            }
-            Ok(output)
+            assert_eq!(finished_players.len(), 1);
+            return Ok(finished_players[0].recorder_output());
         })
         .collect();
-    for o in outputs.drain(0..).filter_map(|o| o.ok()) {
-        println!("{}", o);
-    }
+    // ignore errors
+    let outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
+    // output differently based on the desired format
+    match outfmt {
+        SimulateOutFmt::BankrollVsTime => {
+            for o in outputs.iter() {
+                println!("{}", json!(o));
+            }
+        }
+        SimulateOutFmt::BankrollVsTimeMedrange => {
+            unimplemented!();
+        }
+    };
     Ok(())
 }
 
@@ -129,8 +151,6 @@ fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
     };
     // iterator over all the rolls parsed from the in file
     let rolls = RollIter::new(in_fd);
-    // unwrap ok: clap should have complained
-    let outfmt = args.value_of("outfmt").unwrap();
     // Based on what the desired out format is, parse the rolls into it and try to serialize +
     // write it to the out file
     let res = match parse_as!(ParseRollsOutFmt, args.value_of("outfmt").unwrap()) {
@@ -182,6 +202,12 @@ fn main() {
                         .args(&["dieweights", "rollweights"])
                         .required(true),
                 )
+                .arg(
+                    Arg::with_name("outfmt")
+                    .long("outfmt")
+                    .possible_values(&SimulateOutFmt::variants())
+                    .default_value("bankrollvstime")
+                    .case_insensitive(true))
                 .arg(
                     Arg::with_name("bankroll")
                         .long("starting-bankroll")

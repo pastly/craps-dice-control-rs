@@ -5,6 +5,7 @@ use crate::roll::Roll;
 use std::default::Default;
 use std::error::Error;
 use std::fmt;
+use serde_json::{json, Value};
 
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
@@ -15,13 +16,13 @@ pub trait Player {
     fn done(&mut self);
     fn record_activity(&mut self);
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>);
-    fn recorder_output(&self) -> &str;
+    fn recorder_output(&self) -> Value;
 }
 
 pub trait PlayerRecorder {
     fn record(&mut self, bank: u32, wage: u32, bets: &[Bet]);
     fn done(&mut self);
-    fn read_output(&self) -> &str;
+    fn read_output(&self) -> Value;
 }
 
 #[derive(Debug)]
@@ -160,11 +161,11 @@ impl PlayerCommon {
         self.recorder = Some(r);
     }
 
-    fn recorder_output(&self) -> &str {
+    fn recorder_output(&self) -> Value {
         if let Some(r) = &self.recorder {
             r.read_output()
         } else {
-            ""
+            Value::Null
         }
     }
 }
@@ -217,7 +218,7 @@ impl Player for FieldPlayer {
         self.common.attach_recorder(r)
     }
 
-    fn recorder_output(&self) -> &str {
+    fn recorder_output(&self) -> Value {
         self.common.recorder_output()
     }
 }
@@ -267,7 +268,7 @@ impl Player for PassPlayer {
         self.common.attach_recorder(r)
     }
 
-    fn recorder_output(&self) -> &str {
+    fn recorder_output(&self) -> Value {
         self.common.recorder_output()
     }
 }
@@ -382,7 +383,7 @@ impl fmt::Display for TableState {
 
 #[derive(Default)]
 pub struct BankrollRecorder {
-    out: String,
+    out: Value,
     data: Vec<u32>,
 }
 
@@ -401,11 +402,11 @@ impl PlayerRecorder for BankrollRecorder {
     }
 
     fn done(&mut self) {
-        self.out = serde_json::to_string(&self.data).unwrap();
+        self.out = json!(&self.data);
         self.data.clear();
     }
 
-    fn read_output(&self) -> &str {
-        &self.out
+    fn read_output(&self) -> Value {
+        self.out.clone()
     }
 }
