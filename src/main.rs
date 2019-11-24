@@ -2,7 +2,7 @@ use cdc2::global::conf_def;
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
-use clap::{crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
+use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use std::fs::OpenOptions;
 
@@ -24,6 +24,15 @@ macro_rules! parse_as {
         $V.parse::<$T>().unwrap()
     };
 }
+
+arg_enum!{
+    #[derive(PartialEq, Debug)]
+    enum ParseRollsOutFmt {
+        DieWeights,
+        RollWeights,
+    }
+}
+
 
 fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
     if let Some(fname) = args.value_of("rollweights") {
@@ -124,15 +133,16 @@ fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
     let outfmt = args.value_of("outfmt").unwrap();
     // Based on what the desired out format is, parse the rolls into it and try to serialize +
     // write it to the out file
-    let res = if outfmt == "dieweights" {
-        let (d1, d2) = die_weights_from_iter(rolls);
-        let d = DieWeights::new_weights2(d1, d2);
-        serde_json::to_writer(out_fd, &d)
-    } else if outfmt == "rollweights" {
-        let d = roll_weights_from_iter(rolls);
-        serde_json::to_writer(out_fd, &d)
-    } else {
-        unimplemented!();
+    let res = match parse_as!(ParseRollsOutFmt, args.value_of("outfmt").unwrap()) {
+        ParseRollsOutFmt::DieWeights => {
+            let (d1, d2) = die_weights_from_iter(rolls);
+            let d = DieWeights::new_weights2(d1, d2);
+            serde_json::to_writer(out_fd, &d)
+        }
+        ParseRollsOutFmt::RollWeights => {
+            let d = roll_weights_from_iter(rolls);
+            serde_json::to_writer(out_fd, &d)
+        }
     };
     match res {
         Err(e) => {
@@ -215,7 +225,8 @@ fn main() {
                 .arg(
                     Arg::with_name("outfmt")
                         .long("outfmt")
-                        .possible_values(&["dieweights", "rollweights"])
+                        .possible_values(&ParseRollsOutFmt::variants())
+                        .case_insensitive(true)
                         .default_value("rollweights"),
                 ),
         )
