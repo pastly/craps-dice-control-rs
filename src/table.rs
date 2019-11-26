@@ -2,10 +2,10 @@ use crate::bet::{Bet, BetType};
 use crate::global::POINTS;
 use crate::randroll::RollGen;
 use crate::roll::Roll;
+use serde_json::{json, Value};
 use std::default::Default;
 use std::error::Error;
 use std::fmt;
-use serde_json::{json, Value};
 
 const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;

@@ -4,8 +4,8 @@ use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
-use std::fs::OpenOptions;
 use serde_json::{json, Value};
+use std::fs::OpenOptions;
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -26,7 +26,7 @@ macro_rules! parse_as {
     };
 }
 
-arg_enum!{
+arg_enum! {
     #[derive(PartialEq, Debug)]
     enum ParseRollsOutFmt {
         DieWeights,
@@ -34,7 +34,7 @@ arg_enum!{
     }
 }
 
-arg_enum!{
+arg_enum! {
     #[derive(PartialEq, Debug)]
     enum SimulateOutFmt {
         BankrollVsTime,
@@ -42,6 +42,30 @@ arg_enum!{
     }
 }
 
+// (Copied from nightly-only rust https://doc.rust-lang.org/test/stats/trait.Stats.html)
+// Helper function: extract a value representing the `pct` percentile of a sorted sample-set, using
+// linear interpolation. If samples are not sorted, return nonsensical value.
+fn percentile_of_sorted(sorted_samples: &[u32], pct: u8) -> u32 {
+    assert!(!sorted_samples.is_empty());
+    if sorted_samples.len() == 1 {
+        return sorted_samples[0];
+    }
+    let zero: u8 = 0;
+    assert!(zero <= pct);
+    let hundred: u8 = 100;
+    assert!(pct <= hundred);
+    if pct == hundred {
+        return sorted_samples[sorted_samples.len() - 1];
+    }
+    let length = (sorted_samples.len() - 1) as f32;
+    let rank = (pct as f32 / hundred as f32) * length;
+    let lrank = rank.floor();
+    let d = rank - lrank;
+    let n = lrank as usize;
+    let lo = sorted_samples[n];
+    let hi = sorted_samples[n + 1];
+    (lo as f32 + ((hi - lo) as f32 * d)) as u32
+}
 
 fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
     if let Some(fname) = args.value_of("rollweights") {
@@ -81,6 +105,42 @@ fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
     }
 }
 
+fn bankroll_to_medrange(games: Vec<Vec<u32>>) -> [Vec<u32>; 7] {
+    let mut out = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ];
+    let max_len = {
+        let mut max = std::usize::MIN;
+        for g in &games {
+            if g.len() > max {
+                max = g.len();
+            }
+        }
+        max
+    };
+    for i in 0..max_len {
+        let mut vals: Vec<u32> = games
+            .iter()
+            .map(|g| if i < g.len() { g[i] } else { 0 })
+            .collect();
+        vals.sort_unstable();
+        out[0].push(percentile_of_sorted(&vals, 0));
+        out[1].push(percentile_of_sorted(&vals, 5));
+        out[2].push(percentile_of_sorted(&vals, 25));
+        out[3].push(percentile_of_sorted(&vals, 50));
+        out[4].push(percentile_of_sorted(&vals, 75));
+        out[5].push(percentile_of_sorted(&vals, 95));
+        out[6].push(percentile_of_sorted(&vals, 100));
+    }
+    out
+}
+
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
@@ -90,8 +150,9 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
         .into_par_iter()
         .map(|_| {
             let recorder = Box::new(match outfmt {
-                SimulateOutFmt::BankrollVsTime => BankrollRecorder::new(),
-                _ => unimplemented!()
+                SimulateOutFmt::BankrollVsTime | SimulateOutFmt::BankrollVsTimeMedrange => {
+                    BankrollRecorder::new()
+                }
             });
             let roll_gen = match get_roll_gen(args) {
                 Ok(rg) => rg,
@@ -103,18 +164,18 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             table.add_player(Box::new(p));
             for _ in 0..num_rolls {
                 let finished_players = table.loop_once();
-                if finished_players.len() > 0 {
+                if !finished_players.is_empty() {
                     assert_eq!(finished_players.len(), 1);
                     return Ok(finished_players[0].recorder_output());
                 }
             }
             let finished_players = table.done();
             assert_eq!(finished_players.len(), 1);
-            return Ok(finished_players[0].recorder_output());
+            Ok(finished_players[0].recorder_output())
         })
         .collect();
     // ignore errors
-    let outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
+    let mut outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
     // output differently based on the desired format
     match outfmt {
         SimulateOutFmt::BankrollVsTime => {
@@ -123,7 +184,14 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             }
         }
         SimulateOutFmt::BankrollVsTimeMedrange => {
-            unimplemented!();
+            // change from Vec<Value> to Vec<Vec<u32>>
+            let games: Vec<Vec<u32>> = outputs
+                .drain(0..)
+                .map(|o| serde_json::from_value(o).unwrap())
+                .collect();
+            for ptile in bankroll_to_medrange(games).iter() {
+                println!("{:?}", ptile);
+            }
         }
     };
     Ok(())
@@ -204,10 +272,11 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("outfmt")
-                    .long("outfmt")
-                    .possible_values(&SimulateOutFmt::variants())
-                    .default_value("bankrollvstime")
-                    .case_insensitive(true))
+                        .long("outfmt")
+                        .possible_values(&SimulateOutFmt::variants())
+                        .default_value("BankrollVsTime")
+                        .case_insensitive(true),
+                )
                 .arg(
                     Arg::with_name("bankroll")
                         .long("starting-bankroll")

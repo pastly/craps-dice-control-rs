@@ -3,7 +3,6 @@ from argparse import ArgumentDefaultsHelpFormatter, FileType, ArgumentParser
 import json
 import sys
 
-from scipy.stats import scoreatpercentile as percentile
 import matplotlib
 matplotlib.use('Agg')
 import pylab as plt  # noqa
@@ -17,9 +16,13 @@ def log(*a, **kw):
     print(*a, **kw, file=sys.stderr)
 
 
-def data_sets_from_input(fd):
-    for line in fd:
-        yield json.loads(line)
+def ptiles_from_input(fd):
+    ptiles = [json.loads(line) for line in fd]
+    assert len(ptiles) == 7
+    length = len(ptiles[0])
+    for p in ptiles:
+        assert len(p) == length
+    return ptiles
 
 
 def make_counts(roll_events):
@@ -61,7 +64,7 @@ def rgb_conv(r, g, b):
 
 
 def plot(
-        out_fd, data_sets,
+        out_fd, ptiles,
         title='Expected bankroll change over time',
         xlabel='Roll number',
         ylabel='Change in bankroll',
@@ -70,10 +73,11 @@ def plot(
     ''' Plot the median value across many sets of data, as well as the area
     between the 1st and 3rd quartiles.
 
-    Each input data set should be a dictionary of x,y pairs as specified below.
-    All input data sets must have the same x values. At each specified x value,
-    plot the median of the y values across all data sets. Also plot the 1st and
-    3rd quartiles for the y values at this x value.
+    The ptiles argument should be a list of length 5 containing equal-length
+    lists of percentile data. X values are taken from the position of each
+    value, and the value is itself the V value. The first list is the minimum
+    at each X, the second is 25% percentile, third is median, fourth is 75%
+    percentile, and fifth is maximum.
 
     out_fd: the file-like object to which to write the graph in PNG file format
     data_sets: an iterable, containing one or more data set lists
@@ -84,30 +88,21 @@ def plot(
 
     transparent: whether or not the file should have a transparent background
 
-    An example data set dictionary:
-        [1, 4, 2, 7, 10]
+    An example ptiles list of lists:
+        [
+            [1, 4, 2, 7, 10],  # min at x=[0, 1, 2, 3, 4]
+            [2, 5, 4, 9, 12],  # 5% ptile at x as above
+            [3, 6, 5, 10, 13],  # 25% ptile
+            [5, 8, 5, 13, 20],  # median
+            [8, 10, 7, 14, 22],  # 75% ptile
+            [9, 11, 8, 15, 23],  # 95% ptile
+            [10, 15, 10, 19, 28],  # max
+        ]
 
     Where each value is a y value and the corresponding x value is its position
     '''
     assert file_format in 'png svg svgz'.split(' ')
     plt.figure()
-    d = {}
-    for data_set in data_sets:
-        for x, y in enumerate(data_set):
-            if x not in d:
-                d[x] = []
-            d[x].append(y)
-    stats_d = {}
-    for x in d:
-        stats_d[x] = (
-            min(d[x]),
-            percentile(d[x], 5),
-            percentile(d[x], 25),
-            percentile(d[x], 50),
-            percentile(d[x], 75),
-            percentile(d[x], 95),
-            max(d[x]),
-        )
     # colors selected to be good for colorblind people
     # http://www.somersault1824.com/tips-for-designing-scientific-figures-for-color-blind-readers/
     # http://mkweb.bcgsc.ca/biovis2012/
@@ -123,39 +118,34 @@ def plot(
     middle_color = *purple, 0.5
     lower_color = *blue, 0.9
     lowest_color = *light_blue, 0.9
-    per_0 = [v[0] for v in stats_d.values()]
-    per_5 = [v[1] for v in stats_d.values()]
-    per_25 = [v[2] for v in stats_d.values()]
-    per_50 = [v[3] for v in stats_d.values()]
-    per_75 = [v[4] for v in stats_d.values()]
-    per_95 = [v[5] for v in stats_d.values()]
-    per_100 = [v[6] for v in stats_d.values()]
+    p0, p5, p25, p50, p75, p95, p100 = ptiles
+    x = list(range(len(p0)))
     # plt.plot(stats_d.keys(), per_100, color=max_color, label='max')
-    plt.plot(stats_d.keys(), per_50, color=med_color, label='median')
+    plt.plot(x, p50, color=med_color, label='median')
     # plt.plot(stats_d.keys(), per_0, color=min_color, label='min')
     plt.fill_between(
-        stats_d.keys(), per_100, per_95, color=uppest_color, label='top 5%')
+        x, p100, p95, color=uppest_color, label='top 5%')
     plt.fill_between(
-        stats_d.keys(), per_95, per_75, color=upper_color, label='next 20%')
+        x, p95, p75, color=upper_color, label='next 20%')
     plt.fill_between(
-        stats_d.keys(), per_75, per_25, color=middle_color, label='middle 50%')
+        x, p75, p25, color=middle_color, label='middle 50%')
     plt.fill_between(
-        stats_d.keys(), per_25, per_5, color=lower_color, label='next 20%')
+        x, p25, p5, color=lower_color, label='next 20%')
     plt.fill_between(
-        stats_d.keys(), per_5, per_0, color=lowest_color, label='bottom 5%')
-    plt.xlim(left=0, right=max(stats_d.keys()))
-    ymag = max(max(per_100), -1 * min(per_0))
+        x, p5, p0, color=lowest_color, label='bottom 5%')
+    plt.xlim(left=0, right=len(p100))
+    ymag = max(max(p100), -1 * min(p0))
     # plt.ylim(top=ymag, bottom=-1*ymag)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.legend(loc='best', fontsize=8)
     plt.title(title)
     plt.savefig(out_fd, transparent=transparent, format=file_format)
-    log('Median game min =', min(per_50),
-        '(loss %d)' % (per_50[0] - min(per_50),))
+    log('Median game min =', min(p50),
+        '(loss %d)' % (p50[0] - min(p50),))
     log(
-        'Median game end =', per_50[-1],
-        '(loss %d)' % (per_50[0] - per_50[-1],))
+        'Median game end =', p50[-1],
+        '(loss %d)' % (p50[0] - p50[-1],))
 
 
 def gen_parser():
@@ -188,7 +178,7 @@ def gen_parser():
 
 def main(args):
     plot(
-        args.output, data_sets_from_input(args.input),
+        args.output, ptiles_from_input(args.input),
         title=args.title,
         xlabel=args.xlabel,
         ylabel=args.ylabel,
