@@ -106,15 +106,6 @@ fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
 }
 
 fn bankroll_to_medrange(games: Vec<Vec<u32>>) -> [Vec<u32>; 7] {
-    let mut out = [
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-    ];
     let max_len = {
         let mut max = std::usize::MIN;
         for g in &games {
@@ -124,21 +115,30 @@ fn bankroll_to_medrange(games: Vec<Vec<u32>>) -> [Vec<u32>; 7] {
         }
         max
     };
+    let mut final_out = [
+        Vec::with_capacity(max_len),
+        Vec::with_capacity(max_len),
+        Vec::with_capacity(max_len),
+        Vec::with_capacity(max_len),
+        Vec::with_capacity(max_len),
+        Vec::with_capacity(max_len),
+        Vec::with_capacity(max_len),
+    ];
     for i in 0..max_len {
         let mut vals: Vec<u32> = games
             .iter()
             .map(|g| if i < g.len() { g[i] } else { 0 })
             .collect();
         vals.sort_unstable();
-        out[0].push(percentile_of_sorted(&vals, 0));
-        out[1].push(percentile_of_sorted(&vals, 5));
-        out[2].push(percentile_of_sorted(&vals, 25));
-        out[3].push(percentile_of_sorted(&vals, 50));
-        out[4].push(percentile_of_sorted(&vals, 75));
-        out[5].push(percentile_of_sorted(&vals, 95));
-        out[6].push(percentile_of_sorted(&vals, 100));
+        final_out[0].push(percentile_of_sorted(&vals, 0));
+        final_out[1].push(percentile_of_sorted(&vals, 5));
+        final_out[2].push(percentile_of_sorted(&vals, 25));
+        final_out[3].push(percentile_of_sorted(&vals, 50));
+        final_out[4].push(percentile_of_sorted(&vals, 75));
+        final_out[5].push(percentile_of_sorted(&vals, 95));
+        final_out[6].push(percentile_of_sorted(&vals, 100));
     }
-    out
+    final_out
 }
 
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
@@ -175,7 +175,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
         })
         .collect();
     // ignore errors
-    let mut outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
+    let outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
     // output differently based on the desired format
     match outfmt {
         SimulateOutFmt::BankrollVsTime => {
@@ -186,10 +186,11 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
         SimulateOutFmt::BankrollVsTimeMedrange => {
             // change from Vec<Value> to Vec<Vec<u32>>
             let games: Vec<Vec<u32>> = outputs
-                .drain(0..)
+                .into_par_iter()
                 .map(|o| serde_json::from_value(o).unwrap())
                 .collect();
-            for ptile in bankroll_to_medrange(games).iter() {
+            let medrange = bankroll_to_medrange(games);
+            for ptile in medrange.iter() {
                 println!("{:?}", ptile);
             }
         }
