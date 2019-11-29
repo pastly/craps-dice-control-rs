@@ -101,7 +101,7 @@ fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
         };
         Ok(Box::new(w))
     } else {
-        unimplemented!();
+        Ok(Box::new(DieWeights::new_fair()))
     }
 }
 
@@ -269,7 +269,6 @@ fn main() {
                 .group(
                     ArgGroup::with_name("infmt")
                         .args(&["dieweights", "rollweights"])
-                        .required(true),
                 )
                 .arg(
                     Arg::with_name("outfmt")
