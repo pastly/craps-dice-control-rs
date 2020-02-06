@@ -1,12 +1,12 @@
-use crate::buffer::CharWhitelistIter;
 use crate::roll::Roll;
+use readfilter::CharWhitelist;
 use std::io::Read;
 
 pub struct RollIter<R>
 where
     R: Read,
 {
-    input: CharWhitelistIter<R>,
+    input: CharWhitelist<R>,
 }
 
 impl<R> RollIter<R>
@@ -15,7 +15,7 @@ where
 {
     pub fn new(input: R) -> Self {
         Self {
-            input: CharWhitelistIter::new(input, "123456"),
+            input: CharWhitelist::new(input, "123456"),
         }
     }
 }
