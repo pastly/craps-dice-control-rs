@@ -25,6 +25,13 @@ def ptiles_from_input(fd):
     return ptiles
 
 
+def offset_ptiles(ptiles, by):
+    out = []
+    for in_list in ptiles:
+        out.append(list(map(lambda i: i - by, in_list)))
+    return out
+
+
 def make_counts(roll_events):
     counts = {i: 0 for i in range(2, 12+1)}
     hards = {4: 0, 6: 0, 8: 0, 10: 0}
@@ -173,12 +180,16 @@ def gen_parser():
         default='Change in bankroll')
     p.add_argument(
         '--transparent', action='store_true')
+    p.add_argument(
+        '--offset-y', type=float, default=0,
+        help='Subtract this from all y values')
     return p
 
 
 def main(args):
     plot(
-        args.output, ptiles_from_input(args.input),
+        args.output,
+        offset_ptiles(ptiles_from_input(args.input), args.offset_y),
         title=args.title,
         xlabel=args.xlabel,
         ylabel=args.ylabel,
