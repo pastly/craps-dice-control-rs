@@ -266,10 +266,7 @@ fn main() {
                         .long("roll-weights")
                         .value_name("FILE"),
                 )
-                .group(
-                    ArgGroup::with_name("infmt")
-                        .args(&["dieweights", "rollweights"])
-                )
+                .group(ArgGroup::with_name("infmt").args(&["dieweights", "rollweights"]))
                 .arg(
                     Arg::with_name("outfmt")
                         .long("outfmt")
