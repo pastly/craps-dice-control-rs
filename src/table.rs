@@ -242,10 +242,13 @@ impl Player for PassPlayer {
             1 => {
                 let other = self.common.bets[0];
                 assert!(other.point().is_some());
-                self.common.add_bet(Bet::new_passodds(
-                    other.amount() * 5,
-                    other.point().unwrap(),
-                ))
+                let amt = match other.point().unwrap() {
+                    4 | 6 | 8 | 10 => other.amount() * 5,
+                    5 | 9 => other.amount() * 6,
+                    _ => panic!("Impossible point value"),
+                };
+                self.common
+                    .add_bet(Bet::new_passodds(amt, other.point().unwrap()))
             }
             _ => Ok(()),
         }
