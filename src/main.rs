@@ -146,7 +146,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
     let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
     let outfmt = parse_as!(SimulateOutFmt, args.value_of("outfmt").unwrap());
-    let mut outputs: Vec<Result<Value, ()>> = (0..num_games)
+    let results = (0..num_games)
         .into_par_iter()
         .map(|_| {
             let recorder = Box::new(match outfmt {
@@ -173,28 +173,63 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             assert_eq!(finished_players.len(), 1);
             Ok(finished_players[0].recorder_output())
         })
-        .collect();
-    // ignore errors
-    let outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
-    // output differently based on the desired format
+        // ignore errors
+        .filter_map(|o| o.ok());
     match outfmt {
         SimulateOutFmt::BankrollVsTime => {
-            for o in outputs.iter() {
-                println!("{}", json!(o));
-            }
+            results.for_each(|o| println!("{}", json!(o)));
         }
         SimulateOutFmt::BankrollVsTimeMedrange => {
-            // change from Vec<Value> to Vec<Vec<u32>>
-            let games: Vec<Vec<u32>> = outputs
-                .into_par_iter()
-                .map(|o| serde_json::from_value(o).unwrap())
-                .collect();
-            let medrange = bankroll_to_medrange(games);
-            for ptile in medrange.iter() {
-                println!("{:?}", ptile);
+            let fake = [
+                [1u32, 2, 3, 4, 5],
+                [6u32, 7, 8, 9, 10],
+            ];
+            use memmap::MmapOptions;
+            // 4 for the number of bytes in 32, the assumed size of the type of int the bankroll is
+            //   stored in
+            let file_len = 4 * num_rolls as usize * num_games as usize;
+            let file = OpenOptions::new()
+                .create(true)
+                .write(true)
+                .read(true)
+                .open("mmap.bin")
+                .unwrap();
+            file.set_len(file_len as u64).unwrap();
+            let mut mmap = unsafe { MmapOptions::new().map_mut(&file).unwrap() };
+            for (col, game) in fake.into_iter().enumerate() {
+                for (row, item) in game.into_iter().enumerate() {
+                    let cell = row * num_games as usize + col;
+                    mmap[4*cell+0] = (item << 0) as u8;
+                    mmap[4*cell+1] = (item << 8) as u8;
+                    mmap[4*cell+2] = (item << 16) as u8;
+                    mmap[4*cell+3] = (item << 24) as u8;
+                    //println!("col={} row={} cell={} {}", col, row, cell, item);
+                }
             }
+            mmap.flush().unwrap();
         }
     };
+    //// ignore errors
+    //let outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
+    //// output differently based on the desired format
+    //match outfmt {
+    //    SimulateOutFmt::BankrollVsTime => {
+    //        for o in outputs.iter() {
+    //            println!("{}", json!(o));
+    //        }
+    //    }
+    //    SimulateOutFmt::BankrollVsTimeMedrange => {
+    //        // change from Vec<Value> to Vec<Vec<u32>>
+    //        let games: Vec<Vec<u32>> = outputs
+    //            .into_par_iter()
+    //            .map(|o| serde_json::from_value(o).unwrap())
+    //            .collect();
+    //        let medrange = bankroll_to_medrange(games);
+    //        for ptile in medrange.iter() {
+    //            println!("{:?}", ptile);
+    //        }
+    //    }
+    //};
     Ok(())
 }
 
