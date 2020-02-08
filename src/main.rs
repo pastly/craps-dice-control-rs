@@ -4,7 +4,7 @@ use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::fs::OpenOptions;
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
@@ -105,40 +105,42 @@ fn get_roll_gen(args: &ArgMatches) -> Result<Box<dyn RollGen>, ()> {
     }
 }
 
-fn bankroll_to_medrange(games: Vec<Vec<u32>>) -> [Vec<u32>; 7] {
-    let max_len = {
-        let mut max = std::usize::MIN;
-        for g in &games {
-            if g.len() > max {
-                max = g.len();
-            }
-        }
-        max
-    };
-    let mut final_out = [
-        Vec::with_capacity(max_len),
-        Vec::with_capacity(max_len),
-        Vec::with_capacity(max_len),
-        Vec::with_capacity(max_len),
-        Vec::with_capacity(max_len),
-        Vec::with_capacity(max_len),
-        Vec::with_capacity(max_len),
-    ];
-    for i in 0..max_len {
-        let mut vals: Vec<u32> = games
-            .iter()
-            .map(|g| if i < g.len() { g[i] } else { 0 })
-            .collect();
-        vals.sort_unstable();
-        final_out[0].push(percentile_of_sorted(&vals, 0));
-        final_out[1].push(percentile_of_sorted(&vals, 5));
-        final_out[2].push(percentile_of_sorted(&vals, 25));
-        final_out[3].push(percentile_of_sorted(&vals, 50));
-        final_out[4].push(percentile_of_sorted(&vals, 75));
-        final_out[5].push(percentile_of_sorted(&vals, 95));
-        final_out[6].push(percentile_of_sorted(&vals, 100));
-    }
-    final_out
+fn percentile_summary(vals: &mut Vec<u32>) -> [u32; 7] {
+    vals.sort_unstable();
+    [
+        percentile_of_sorted(&vals, 0),
+        percentile_of_sorted(&vals, 5),
+        percentile_of_sorted(&vals, 25),
+        percentile_of_sorted(&vals, 50),
+        percentile_of_sorted(&vals, 75),
+        percentile_of_sorted(&vals, 95),
+        percentile_of_sorted(&vals, 100),
+    ]
+}
+
+//use rayon;
+//use std::thread;
+//fn into_iter<T>(iter: impl rayon::iter::ParallelIterator<Item=T>) -> Box<dyn Iterator<Item=T>>
+//where
+//    T: Send
+//{
+//  let (send, recv) = std::sync::mpsc::sync_channel(1);
+//  thread::spawn(move || iter.for_each(|el| { let _ = send.send(el); }));
+//  Box::new(recv.into_iter())
+//}
+
+fn u32_to_u8(v: &mut [u32]) -> &[u8] {
+    let (head, body, tail) = unsafe { v.align_to::<u8>() };
+    assert!(head.is_empty());
+    assert!(tail.is_empty());
+    body
+}
+
+fn u8_to_u32(v: &mut [u8]) -> &[u32] {
+    let (head, body, tail) = unsafe { v.align_to::<u32>() };
+    assert!(head.is_empty());
+    assert!(tail.is_empty());
+    body
 }
 
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
@@ -148,7 +150,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let outfmt = parse_as!(SimulateOutFmt, args.value_of("outfmt").unwrap());
     let results = (0..num_games)
         .into_par_iter()
-        .map(|_| {
+        .map(|game_idx| {
             let recorder = Box::new(match outfmt {
                 SimulateOutFmt::BankrollVsTime | SimulateOutFmt::BankrollVsTimeMedrange => {
                     BankrollRecorder::new()
@@ -166,47 +168,70 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 let finished_players = table.loop_once();
                 if !finished_players.is_empty() {
                     assert_eq!(finished_players.len(), 1);
-                    return Ok(finished_players[0].recorder_output());
+                    return Ok((game_idx, finished_players[0].recorder_output()));
                 }
             }
             let finished_players = table.done();
             assert_eq!(finished_players.len(), 1);
-            Ok(finished_players[0].recorder_output())
+            Ok((game_idx, finished_players[0].recorder_output()))
         })
         // ignore errors
         .filter_map(|o| o.ok());
     match outfmt {
         SimulateOutFmt::BankrollVsTime => {
-            results.for_each(|o| println!("{}", json!(o)));
+            results.for_each(|(_, o)| println!("{}", json!(o)));
         }
         SimulateOutFmt::BankrollVsTimeMedrange => {
-            let fake = [
-                [1u32, 2, 3, 4, 5],
-                [6u32, 7, 8, 9, 10],
-            ];
-            use memmap::MmapOptions;
-            // 4 for the number of bytes in 32, the assumed size of the type of int the bankroll is
-            //   stored in
-            let file_len = 4 * num_rolls as usize * num_games as usize;
-            let file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .read(true)
-                .open("mmap.bin")
-                .unwrap();
-            file.set_len(file_len as u64).unwrap();
-            let mut mmap = unsafe { MmapOptions::new().map_mut(&file).unwrap() };
-            for (col, game) in fake.into_iter().enumerate() {
-                for (row, item) in game.into_iter().enumerate() {
-                    let cell = row * num_games as usize + col;
-                    mmap[4*cell+0] = (item << 0) as u8;
-                    mmap[4*cell+1] = (item << 8) as u8;
-                    mmap[4*cell+2] = (item << 16) as u8;
-                    mmap[4*cell+3] = (item << 24) as u8;
-                    //println!("col={} row={} cell={} {}", col, row, cell, item);
+            use std::io::{Read, Seek, SeekFrom, Write};
+            use std::sync::mpsc::{sync_channel, Receiver};
+            use std::thread;
+            let int_size = 4;
+            let file_len = int_size * num_rolls as usize * num_games as usize;
+            let file_name = "mmap.bin";
+            eprintln!("Writing to file");
+            {
+                let (sender, receiver): (_, Receiver<Vec<u32>>) = sync_channel(1);
+                // four for the number of bytes in u32, the assumed size of the type of int the
+                // bankroll is stored in
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .open(file_name)
+                    .unwrap();
+                file.set_len(file_len as u64).unwrap();
+                thread::spawn(move || {
+                    for mut game in receiver.iter() {
+                        let v = u32_to_u8(&mut game);
+                        file.write_all(v).unwrap();
+                    }
+                    file.flush().unwrap();
+                });
+                results.for_each_with(sender, |s, (_, game)| {
+                    let game: Vec<u32> = serde_json::from_value(game).unwrap();
+                    s.send(game).unwrap();
+                });
+            }
+            eprintln!("Reading back from file");
+            {
+                let mut file = OpenOptions::new().read(true).open(file_name).unwrap();
+                let mut v = Vec::with_capacity(num_games as usize);
+                let mut buf = [0u8; 4];
+                for col in 0..num_rolls {
+                    for row in 0..num_games {
+                        file.seek(SeekFrom::Start(
+                            col as u64 * int_size as u64
+                                + row as u64 * num_rolls as u64 * int_size as u64,
+                        ))
+                        .unwrap();
+                        file.read_exact(&mut buf).unwrap();
+                        let buf = u8_to_u32(&mut buf);
+                        v.push(buf[0]);
+                    }
+                    let summary = percentile_summary(&mut v);
+                    println!("{}", json!(summary));
+                    v.clear();
                 }
             }
-            mmap.flush().unwrap();
         }
     };
     //// ignore errors
