@@ -16,14 +16,14 @@ def log(*a, **kw):
     print(*a, **kw, file=sys.stderr)
 
 
-def ptiles_from_input2(fd):
+def ptiles_from_input(fd):
     for line in fd:
         xval, ptiles = json.loads(line)
         assert len(ptiles) == 7
         yield xval, ptiles
 
 
-def offset_ptiles2(ptiles, by):
+def offset_ptiles(ptiles, by):
     for xval, ptile in ptiles:
         yield xval, [val - by for val in ptile]
 
@@ -66,11 +66,12 @@ def rgb_conv(r, g, b):
     return r / 255, g / 255, b / 255
 
 
-def plot2(
+def plot(
         out_fd, ptiles,
         title='Expected bankroll change over time',
         xlabel='Roll number',
         ylabel='Change in bankroll',
+        ymin=None, ymax=None,
         file_format='png',
         transparent=False):
     ''' Plot the median value across many sets of data, as well as the area
@@ -146,8 +147,10 @@ def plot2(
     plt.fill_between(
         x, p5, p0, color=lowest_color, label='bottom 5%')
     plt.xlim(left=0, right=len(p100))
-    # ymag = max(max(p100), -1 * min(p0))
-    # plt.ylim(top=ymag, bottom=-1*ymag)
+    if ymin is not None:
+        plt.ylim(bottom=ymin)
+    if ymax is not None:
+        plt.ylim(top=ymax)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.legend(loc='best', fontsize=8)
@@ -194,12 +197,14 @@ def gen_parser():
 
 
 def main(args):
-    plot2(
+    plot(
         args.output,
-        offset_ptiles2(ptiles_from_input2(args.input), args.offset_y),
+        offset_ptiles(ptiles_from_input(args.input), args.offset_y),
         title=args.title,
         xlabel=args.xlabel,
         ylabel=args.ylabel,
+        ymin=args.ymin,
+        ymax=args.ymax,
         file_format=args.format,
         transparent=args.transparent,
     )

@@ -276,6 +276,61 @@ impl Player for PassPlayer {
     }
 }
 
+pub struct FieldMartingalePlayer {
+    common: PlayerCommon,
+    num_lost: u32,
+    unit: u32,
+}
+
+impl FieldMartingalePlayer {
+    pub fn new(bankroll: u32) -> Self {
+        Self {
+            common: PlayerCommon::new(bankroll),
+            num_lost: 0,
+            unit: 5,
+        }
+    }
+}
+
+impl Player for FieldMartingalePlayer {
+    fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError> {
+        //eprintln!("{:?}", state);
+        if let Some(last_roll) = state.last_roll {
+            match last_roll.value() {
+                2 | 3 | 4 | 9 | 10 | 11 | 12 => {
+                    self.num_lost = 0;
+                }
+                5 | 6 | 7 | 8 => {
+                    self.num_lost += 1;
+                }
+                _ => panic!("Impossible roll value"),
+            };
+        };
+        let val = self.unit * (1 << self.num_lost);
+        self.common.add_bet(Bet::new_field(val))
+    }
+
+    fn done(&mut self) {
+        self.common.done()
+    }
+
+    fn react_to_roll(&mut self, table_state: &TableState) {
+        self.common.react_to_roll(table_state)
+    }
+
+    fn record_activity(&mut self) {
+        self.common.record_activity()
+    }
+
+    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
+        self.common.attach_recorder(r)
+    }
+
+    fn recorder_output(&self) -> Value {
+        self.common.recorder_output()
+    }
+}
+
 pub struct Table {
     state: TableState,
     roll_gen: Box<dyn RollGen>,

@@ -1,7 +1,7 @@
 use cdc2::global::conf_def;
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
-use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
+use cdc2::table::{BankrollRecorder, FieldMartingalePlayer, Player, Table};
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use serde_json::json;
@@ -194,7 +194,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 Err(_) => return Err(()),
             };
             let mut table = Table::new(roll_gen);
-            let mut p = PassPlayer::new(bank);
+            let mut p = FieldMartingalePlayer::new(bank);
             p.attach_recorder(recorder);
             table.add_player(Box::new(p));
             for _ in 0..num_rolls {
