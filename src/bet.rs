@@ -68,7 +68,9 @@ const BUY_PAY_UPFRONT: bool = true;
 const LAY_PAY_UPFRONT: bool = true;
 
 impl Bet {
-    fn new(bet_type: BetType, working: bool, amount: u32, point: Option<u8>) -> Bet {
+    /// Internal constructor. Will allow you to make nonsense bets (e.g. Pass that isn't working.
+    /// e.g. DC Odds with no point). This should never be make public.
+    fn new_internal(bet_type: BetType, working: bool, amount: u32, point: Option<u8>) -> Bet {
         Bet {
             bet_type,
             amount,
@@ -90,51 +92,51 @@ impl Bet {
     }
 
     pub fn new_pass(amount: u32) -> Bet {
-        Bet::new(BetType::Pass, true, amount, None)
+        Bet::new_internal(BetType::Pass, true, amount, None)
     }
 
     pub fn new_passodds(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::PassOdds, true, amount, Some(point))
+        Bet::new_internal(BetType::PassOdds, true, amount, Some(point))
     }
 
     pub fn new_dontpass(amount: u32) -> Bet {
-        Bet::new(BetType::DontPass, true, amount, None)
+        Bet::new_internal(BetType::DontPass, true, amount, None)
     }
 
     pub fn new_dontpassodds(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::DontPassOdds, true, amount, Some(point))
+        Bet::new_internal(BetType::DontPassOdds, true, amount, Some(point))
     }
 
     pub fn new_come(amount: u32) -> Bet {
-        Bet::new(BetType::Come, true, amount, None)
+        Bet::new_internal(BetType::Come, true, amount, None)
     }
 
     pub fn new_comeodds(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::ComeOdds, true, amount, Some(point))
+        Bet::new_internal(BetType::ComeOdds, true, amount, Some(point))
     }
 
     pub fn new_dontcome(amount: u32) -> Bet {
-        Bet::new(BetType::DontCome, true, amount, None)
+        Bet::new_internal(BetType::DontCome, true, amount, None)
     }
 
     pub fn new_dontcomeodds(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::DontComeOdds, true, amount, Some(point))
+        Bet::new_internal(BetType::DontComeOdds, true, amount, Some(point))
     }
 
     pub fn new_place(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::Place, true, amount, Some(point))
+        Bet::new_internal(BetType::Place, true, amount, Some(point))
     }
 
     pub fn new_buy(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::Buy, true, amount, Some(point))
+        Bet::new_internal(BetType::Buy, true, amount, Some(point))
     }
 
     pub fn new_lay(amount: u32, point: u8) -> Bet {
-        Bet::new(BetType::Lay, true, amount, Some(point))
+        Bet::new_internal(BetType::Lay, true, amount, Some(point))
     }
 
     pub fn new_field(amount: u32) -> Bet {
-        Bet::new(BetType::Field, true, amount, None)
+        Bet::new_internal(BetType::Field, true, amount, None)
     }
 
     pub fn set_working(bet: Bet, working: bool) -> Result<Bet, BetError> {
@@ -410,10 +412,10 @@ mod tests {
         for bet_type in BetTypeIter::new() {
             // some of these will be nonsense bets (like Pass that isn't working or DC Odds without
             // a point) but the important part is testing if we can set the point to true. The
-            // Bet::new func isn't public (right now ...).
+            // Bet::new func isn't public
             for already_working in [true, false].iter() {
                 for to_working in [true, false].iter() {
-                    let b = Bet::new(bet_type, *already_working, 30, None);
+                    let b = Bet::new_internal(bet_type, *already_working, 30, None);
                     let res = Bet::set_working(b, *to_working);
                     if res.is_ok() && bet_type != BetType::Place {
                         panic!(
@@ -427,7 +429,10 @@ mod tests {
                         );
                     } else if res.is_ok() {
                         assert_eq!(bet_type, BetType::Place);
-                        assert_eq!(res.unwrap(), Bet::new(bet_type, *to_working, 30, None));
+                        assert_eq!(
+                            res.unwrap(),
+                            Bet::new_internal(bet_type, *to_working, 30, None)
+                        );
                     } else {
                         assert_ne!(bet_type, BetType::Place);
                         assert_eq!(res.unwrap_err(), BetError::Working(bet_type, *to_working));
@@ -448,7 +453,7 @@ mod tests {
         // can't win a bet that isn't working. Some of these bets will be nonsense, but this should
         // still hold true
         for bet_type in BetTypeIter::new() {
-            let b = Bet::new(bet_type, false, 5, None);
+            let b = Bet::new_internal(bet_type, false, 5, None);
             for roll in all_rolls() {
                 assert_eq!(b.wins_with(roll), false);
             }
@@ -547,7 +552,7 @@ mod tests {
         // can't lose a bet that isn't working. Some of these bets will be nonsense, but this
         // should still hold true
         for bet_type in BetTypeIter::new() {
-            let b = Bet::new(bet_type, false, 5, None);
+            let b = Bet::new_internal(bet_type, false, 5, None);
             for roll in all_rolls() {
                 assert_eq!(b.loses_with(roll), false);
             }
