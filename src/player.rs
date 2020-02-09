@@ -13,7 +13,7 @@ pub trait Player {
     fn done(&mut self);
     fn record_activity(&mut self);
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>);
-    fn recorder_output(&self) -> Value;
+    fn recorder_output(&self) -> Vec<Value>;
 }
 
 pub trait PlayerRecorder {
@@ -42,7 +42,7 @@ struct PlayerCommon {
     bets: Vec<Bet>,
     bankroll: u32,
     wagered: u32,
-    recorder: Option<Box<dyn PlayerRecorder>>,
+    recorders: Vec<Box<dyn PlayerRecorder>>,
 }
 
 impl PlayerCommon {
@@ -54,7 +54,7 @@ impl PlayerCommon {
     }
 
     fn done(&mut self) {
-        if let Some(r) = &mut self.recorder {
+        for r in self.recorders.iter_mut() {
             r.done()
         }
     }
@@ -148,22 +148,21 @@ impl PlayerCommon {
     }
 
     fn record_activity(&mut self) {
-        if let Some(r) = &mut self.recorder {
+        for r in self.recorders.iter_mut() {
             r.record(self.bankroll, self.wagered, &self.bets);
         }
     }
 
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
-        assert!(self.recorder.is_none());
-        self.recorder = Some(r);
+        self.recorders.push(r);
     }
 
-    fn recorder_output(&self) -> Value {
-        if let Some(r) = &self.recorder {
-            r.read_output()
-        } else {
-            Value::Null
+    fn recorder_output(&self) -> Vec<Value> {
+        let mut v = vec![];
+        for r in self.recorders.iter() {
+            v.push(r.read_output());
         }
+        v
     }
 }
 
@@ -215,7 +214,7 @@ impl Player for FieldPlayer {
         self.common.attach_recorder(r)
     }
 
-    fn recorder_output(&self) -> Value {
+    fn recorder_output(&self) -> Vec<Value> {
         self.common.recorder_output()
     }
 }
@@ -268,7 +267,7 @@ impl Player for PassPlayer {
         self.common.attach_recorder(r)
     }
 
-    fn recorder_output(&self) -> Value {
+    fn recorder_output(&self) -> Vec<Value> {
         self.common.recorder_output()
     }
 }
@@ -331,7 +330,7 @@ impl Player for FieldMartingalePlayer {
         self.common.attach_recorder(r)
     }
 
-    fn recorder_output(&self) -> Value {
+    fn recorder_output(&self) -> Vec<Value> {
         self.common.recorder_output()
     }
 }

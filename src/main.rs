@@ -237,8 +237,9 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                     }
                     file.flush().unwrap();
                 });
-                results.for_each_with(sender, |s, (_, game)| {
-                    let game: Vec<u32> = serde_json::from_value(game).unwrap();
+                results.for_each_with(sender, |s, (_, mut output)| {
+                    assert_eq!(output.len(), 1);
+                    let game = serde_json::from_value(output.pop().unwrap()).unwrap();
                     s.send(game).unwrap();
                 });
             }
