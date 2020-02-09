@@ -18,9 +18,9 @@ def log(*a, **kw):
 
 def ptiles_from_input2(fd):
     for line in fd:
-        ptiles = json.loads(line)
+        xval, ptiles = json.loads(line)
         assert len(ptiles) == 7
-        yield ptiles
+        yield xval, ptiles
 
 
 def ptiles_from_input(fd):
@@ -33,8 +33,8 @@ def ptiles_from_input(fd):
 
 
 def offset_ptiles2(ptiles, by):
-    for ptile in ptiles:
-        yield [val - by for val in ptile]
+    for xval, ptile in ptiles:
+        yield xval, [val - by for val in ptile]
 
 
 def offset_ptiles(ptiles, by):
@@ -129,14 +129,24 @@ def plot2(
     lower_color = *blue, 0.9
     lowest_color = *light_blue, 0.9
     p0, p5, p25, p50, p75, p95, p100 = [], [], [], [], [], [], []
-    for vals in ptiles:
-        p0.append(vals[0])
-        p5.append(vals[1])
-        p25.append(vals[2])
-        p50.append(vals[3])
-        p75.append(vals[4])
-        p95.append(vals[5])
-        p100.append(vals[6])
+    last_idx = -1
+    for xval, vals in ptiles:
+        if xval > last_idx:
+            p0.extend([0] * (xval - last_idx))
+            p5.extend([0] * (xval - last_idx))
+            p25.extend([0] * (xval - last_idx))
+            p50.extend([0] * (xval - last_idx))
+            p75.extend([0] * (xval - last_idx))
+            p95.extend([0] * (xval - last_idx))
+            p100.extend([0] * (xval - last_idx))
+            last_idx = len(p0) - 1
+        p0[xval] = vals[0]
+        p5[xval] = vals[1]
+        p25[xval] = vals[2]
+        p50[xval] = vals[3]
+        p75[xval] = vals[4]
+        p95[xval] = vals[5]
+        p100[xval] = vals[6]
     x = list(range(len(p0)))
     # plt.plot(stats_d.keys(), per_100, color=max_color, label='max')
     plt.plot(x, p50, color=med_color, label='median')

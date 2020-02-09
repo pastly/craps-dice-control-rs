@@ -5,7 +5,8 @@ use cdc2::table::{BankrollRecorder, PassPlayer, Player, Table};
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use serde_json::json;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -118,16 +119,48 @@ fn percentile_summary(vals: &mut Vec<u32>) -> [u32; 7] {
     ]
 }
 
-//use rayon;
-//use std::thread;
-//fn into_iter<T>(iter: impl rayon::iter::ParallelIterator<Item=T>) -> Box<dyn Iterator<Item=T>>
-//where
-//    T: Send
-//{
-//  let (send, recv) = std::sync::mpsc::sync_channel(1);
-//  thread::spawn(move || iter.for_each(|el| { let _ = send.send(el); }));
-//  Box::new(recv.into_iter())
-//}
+struct BankrollMedrangeIter {
+    num_games: u32,
+    num_rolls: u32,
+    int_size: usize,
+    file: File,
+    col: u32,
+}
+
+impl BankrollMedrangeIter {
+    fn new(num_games: u32, num_rolls: u32, int_size: usize, file: File) -> Self {
+        Self {
+            num_games,
+            num_rolls,
+            int_size,
+            file,
+            col: 0,
+        }
+    }
+}
+
+impl Iterator for BankrollMedrangeIter {
+    type Item = (u32, [u32; 7]);
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.col == self.num_rolls {
+            return None;
+        }
+        let mut v = Vec::with_capacity(self.num_games as usize);
+        let mut buf = vec![0; self.int_size];
+        for row in 0..self.num_games {
+            let idx = self.col as u64 * self.int_size as u64
+                + row as u64 * self.num_rolls as u64 * self.int_size as u64;
+            self.file.seek(SeekFrom::Start(idx)).unwrap();
+            self.file.read_exact(&mut buf).unwrap();
+            let buf = u8_to_u32(&mut buf);
+            v.push(buf[0]);
+        }
+        let summary = percentile_summary(&mut v);
+        let ret = (self.col, summary);
+        self.col += 1;
+        Some(ret)
+    }
+}
 
 fn u32_to_u8(v: &mut [u32]) -> &[u8] {
     let (head, body, tail) = unsafe { v.align_to::<u8>() };
@@ -182,7 +215,6 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             results.for_each(|(_, o)| println!("{}", json!(o)));
         }
         SimulateOutFmt::BankrollVsTimeMedrange => {
-            use std::io::{Read, Seek, SeekFrom, Write};
             use std::sync::mpsc::{sync_channel, Receiver};
             use std::thread;
             let int_size = 4;
@@ -191,8 +223,6 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             eprintln!("Writing to file");
             {
                 let (sender, receiver): (_, Receiver<Vec<u32>>) = sync_channel(1);
-                // four for the number of bytes in u32, the assumed size of the type of int the
-                // bankroll is stored in
                 let mut file = OpenOptions::new()
                     .create(true)
                     .write(true)
@@ -213,48 +243,14 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             }
             eprintln!("Reading back from file");
             {
-                let mut file = OpenOptions::new().read(true).open(file_name).unwrap();
-                let mut v = Vec::with_capacity(num_games as usize);
-                let mut buf = [0u8; 4];
-                for col in 0..num_rolls {
-                    for row in 0..num_games {
-                        file.seek(SeekFrom::Start(
-                            col as u64 * int_size as u64
-                                + row as u64 * num_rolls as u64 * int_size as u64,
-                        ))
-                        .unwrap();
-                        file.read_exact(&mut buf).unwrap();
-                        let buf = u8_to_u32(&mut buf);
-                        v.push(buf[0]);
-                    }
-                    let summary = percentile_summary(&mut v);
-                    println!("{}", json!(summary));
-                    v.clear();
-                }
+                let file = OpenOptions::new().read(true).open(file_name).unwrap();
+                let iter = BankrollMedrangeIter::new(num_games, num_rolls, int_size, file);
+                iter.par_bridge().for_each(|item| {
+                    println!("{}", json!(item));
+                });
             }
         }
     };
-    //// ignore errors
-    //let outputs: Vec<Value> = outputs.drain(0..).filter_map(|o| o.ok()).collect();
-    //// output differently based on the desired format
-    //match outfmt {
-    //    SimulateOutFmt::BankrollVsTime => {
-    //        for o in outputs.iter() {
-    //            println!("{}", json!(o));
-    //        }
-    //    }
-    //    SimulateOutFmt::BankrollVsTimeMedrange => {
-    //        // change from Vec<Value> to Vec<Vec<u32>>
-    //        let games: Vec<Vec<u32>> = outputs
-    //            .into_par_iter()
-    //            .map(|o| serde_json::from_value(o).unwrap())
-    //            .collect();
-    //        let medrange = bankroll_to_medrange(games);
-    //        for ptile in medrange.iter() {
-    //            println!("{:?}", ptile);
-    //        }
-    //    }
-    //};
     Ok(())
 }
 
