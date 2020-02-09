@@ -443,9 +443,33 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn set_point() {
-        unimplemented!();
+        for bet_type in BetTypeIter::new() {
+            let amount = 5;
+            let b = Bet::new_internal(bet_type, true, amount, None);
+            match bet_type {
+                // Cannot set a point on these types
+                BetType::PassOdds
+                | BetType::DontPassOdds
+                | BetType::ComeOdds
+                | BetType::DontComeOdds
+                | BetType::Buy
+                | BetType::Lay
+                | BetType::Place
+                | BetType::Field => {
+                    for point in [4, 5, 6, 8, 9, 10].iter() {
+                        assert_eq!(Err(BetError::CantSetPoint(b)), Bet::set_point(b, *point));
+                    }
+                }
+                // Can set point on these types
+                BetType::Pass | BetType::DontPass | BetType::Come | BetType::DontCome => {
+                    for point in [4, 5, 6, 8, 9, 10].iter() {
+                        let out = Bet::new_internal(bet_type, true, amount, Some(*point));
+                        assert_eq!(Ok(out), Bet::set_point(b, *point));
+                    }
+                }
+            }
+        }
     }
 
     #[test]
