@@ -280,14 +280,16 @@ pub struct FieldMartingalePlayer {
     common: PlayerCommon,
     num_lost: u32,
     unit: u32,
+    max_bet: u32,
 }
 
 impl FieldMartingalePlayer {
-    pub fn new(bankroll: u32) -> Self {
+    pub fn new(bankroll: u32, max_bet: u32) -> Self {
         Self {
             common: PlayerCommon::new(bankroll),
             num_lost: 0,
             unit: 5,
+            max_bet,
         }
     }
 }
@@ -306,7 +308,7 @@ impl Player for FieldMartingalePlayer {
                 _ => panic!("Impossible roll value"),
             };
         };
-        let val = self.unit * (1 << self.num_lost);
+        let val = std::cmp::min(self.max_bet, self.unit * (1 << self.num_lost));
         self.common.add_bet(Bet::new_field(val))
     }
 

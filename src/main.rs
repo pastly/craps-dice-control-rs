@@ -194,7 +194,7 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 Err(_) => return Err(()),
             };
             let mut table = Table::new(roll_gen);
-            let mut p = FieldMartingalePlayer::new(bank);
+            let mut p = FieldMartingalePlayer::new(bank, 3000);
             p.attach_recorder(recorder);
             table.add_player(Box::new(p));
             for _ in 0..num_rolls {
