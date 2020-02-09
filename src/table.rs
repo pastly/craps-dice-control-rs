@@ -297,6 +297,9 @@ impl FieldMartingalePlayer {
 impl Player for FieldMartingalePlayer {
     fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError> {
         //eprintln!("{:?}", state);
+        if self.common.bankroll == 0 {
+            return Ok(());
+        }
         if let Some(last_roll) = state.last_roll {
             match last_roll.value() {
                 2 | 3 | 4 | 9 | 10 | 11 | 12 => {
@@ -308,7 +311,10 @@ impl Player for FieldMartingalePlayer {
                 _ => panic!("Impossible roll value"),
             };
         };
-        let val = std::cmp::min(self.max_bet, self.unit * (1 << self.num_lost));
+        let val = std::cmp::min(
+            self.unit * (1 << self.num_lost),
+            std::cmp::min(self.max_bet, self.common.bankroll),
+        );
         self.common.add_bet(Bet::new_field(val))
     }
 
