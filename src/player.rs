@@ -191,6 +191,30 @@ impl FieldPlayer {
     }
 }
 
+macro_rules! impl_playercommon_passthrough_for_player {
+    () => {
+        fn done(&mut self) {
+            self.common.done()
+        }
+
+        fn react_to_roll(&mut self, table_state: &TableState) {
+            self.common.react_to_roll(table_state)
+        }
+
+        fn record_activity(&mut self) {
+            self.common.record_activity()
+        }
+
+        fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
+            self.common.attach_recorder(r)
+        }
+
+        fn recorder_output(&self) -> Value {
+            self.common.recorder_output()
+        }
+    };
+}
+
 impl Player for FieldPlayer {
     fn make_bets(&mut self, _state: &TableState) -> Result<(), PlayerError> {
         if self.common.bets.len() != 1 {
@@ -199,25 +223,7 @@ impl Player for FieldPlayer {
         Ok(())
     }
 
-    fn done(&mut self) {
-        self.common.done()
-    }
-
-    fn react_to_roll(&mut self, table_state: &TableState) {
-        self.common.react_to_roll(table_state)
-    }
-
-    fn record_activity(&mut self) {
-        self.common.record_activity()
-    }
-
-    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
-        self.common.attach_recorder(r)
-    }
-
-    fn recorder_output(&self) -> Value {
-        self.common.recorder_output()
-    }
+    impl_playercommon_passthrough_for_player!();
 }
 
 pub struct PassPlayer {
@@ -252,25 +258,7 @@ impl Player for PassPlayer {
         //eprintln!("{}", self.common);
     }
 
-    fn done(&mut self) {
-        self.common.done()
-    }
-
-    fn react_to_roll(&mut self, table_state: &TableState) {
-        self.common.react_to_roll(table_state)
-    }
-
-    fn record_activity(&mut self) {
-        self.common.record_activity()
-    }
-
-    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
-        self.common.attach_recorder(r)
-    }
-
-    fn recorder_output(&self) -> Value {
-        self.common.recorder_output()
-    }
+    impl_playercommon_passthrough_for_player!();
 }
 
 pub struct FieldMartingalePlayer {
@@ -315,25 +303,7 @@ impl Player for FieldMartingalePlayer {
         self.common.add_bet(Bet::new_field(val))
     }
 
-    fn done(&mut self) {
-        self.common.done()
-    }
-
-    fn react_to_roll(&mut self, table_state: &TableState) {
-        self.common.react_to_roll(table_state)
-    }
-
-    fn record_activity(&mut self) {
-        self.common.record_activity()
-    }
-
-    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
-        self.common.attach_recorder(r)
-    }
-
-    fn recorder_output(&self) -> Value {
-        self.common.recorder_output()
-    }
+    impl_playercommon_passthrough_for_player!();
 }
 
 #[derive(Default)]
