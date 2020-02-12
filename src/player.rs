@@ -45,6 +45,37 @@ struct PlayerCommon {
     recorder: Option<Box<dyn PlayerRecorder>>,
 }
 
+///// Take something that impl Iterator and return an Iterator over bets that have the given type.
+/////
+///// This is a macro as opposed to a method because I was wrestling with the lifetime of the BetType
+///// parameter. My understanding of lifetimes (and the error messages) told me the only way to get
+///// this to compile was to collect() into a Vec. I don't want to do that. So macro it is.
+//macro_rules! bets_with_type {
+//    ($bet:expr, $bt:expr) => {
+//        $bet.into_iter().filter(|b| b.bet_type == $bt)
+//    };
+//}
+//
+///// Take something that impl Iterator and return an Iterator over bets that have the given point.
+/////
+///// This is a macro as opposed to a method because I was wrestling with the lifetime of the point
+///// parameter. My understanding of lifetimes (and the error messages) told me the only way to get
+///// this to compile was to collect() into a Vec. I don't want to do that. So macro it is.
+//macro_rules! bets_with_point {
+//    ($bet:expr, $point:expr) => {
+//        $bet.into_iter().filter(|b| b.point() == $point)
+//    };
+//}
+
+/// Return an Iterator of bets that have both the given type and point
+macro_rules! bets_with_type_point {
+    ($bet:expr, $bt:expr, $point:expr) => {
+        $bet.into_iter()
+            .filter(|b| b.bet_type == $bt)
+            .filter(|b| b.point() == $point)
+    };
+}
+
 impl PlayerCommon {
     fn new(bankroll: u32) -> Self {
         Self {
@@ -56,6 +87,69 @@ impl PlayerCommon {
     fn done(&mut self) {
         if let Some(r) = &mut self.recorder {
             r.done()
+        }
+    }
+
+    fn can_remove_bet(&self, b: &Bet) -> bool {
+        match b.bet_type {
+            BetType::Pass | BetType::Come => {
+                let odds_type = if b.bet_type == BetType::Pass {
+                    BetType::PassOdds
+                } else {
+                    BetType::ComeOdds
+                };
+                // if there is a point, then more to check
+                if let Some(_) = b.point() {
+                    // check for odds on the same point value. It isn't okay to remove the flat bet
+                    // if it has odds attached
+                    // sanity: make sure either 0 or 1
+                    let num_odds_bets =
+                        bets_with_type_point!(&self.bets, odds_type, b.point()).count();
+                    assert!(num_odds_bets <= 1);
+                    num_odds_bets == 0
+                } else {
+                    // no point, so yes it's okay
+                    // sanity: let's make sure there is no Odds with it though. Can't have odds
+                    // without a point
+                    assert_eq!(
+                        bets_with_type_point!(&self.bets, odds_type, None).count(),
+                        0
+                    );
+                    true
+                }
+            }
+            BetType::DontPass | BetType::DontCome => {
+                // can always remove as long as no odds.
+                let odds_type = if b.bet_type == BetType::DontPass {
+                    BetType::DontPassOdds
+                } else {
+                    BetType::DontComeOdds
+                };
+                let num_odds_bets = bets_with_type_point!(&self.bets, odds_type, b.point()).count();
+                // sanity: if no point, then also no odds
+                if b.point().is_none() {
+                    assert_eq!(num_odds_bets, 0);
+                }
+                num_odds_bets == 0
+            }
+            BetType::PassOdds
+            | BetType::ComeOdds
+            | BetType::DontPassOdds
+            | BetType::DontComeOdds
+            | BetType::Place
+            | BetType::Buy
+            | BetType::Lay => {
+                // can always remove
+                // sanity: must always have a point
+                assert!(b.point().is_some());
+                true
+            }
+            BetType::Field => {
+                // can always remove
+                // sanity: must never have a point
+                assert!(b.point().is_none());
+                true
+            }
         }
     }
 
