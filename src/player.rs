@@ -25,6 +25,9 @@ pub trait PlayerRecorder {
 #[derive(Debug)]
 pub enum PlayerError {
     NotEnoughBankroll(),
+    DuplicateBet(Bet),
+    CantRemoveBet(Bet),
+    DontHaveBet(Bet),
 }
 
 impl Error for PlayerError {}
@@ -33,6 +36,9 @@ impl fmt::Display for PlayerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             PlayerError::NotEnoughBankroll() => write!(f, "Ran out of bankroll"),
+            PlayerError::DuplicateBet(bet) => write!(f, "Duplicate bet {}", bet),
+            PlayerError::CantRemoveBet(bet) => write!(f, "Cannot remove bet {}", bet),
+            PlayerError::DontHaveBet(bet) => write!(f, "Dont't have bet {}", bet),
         }
     }
 }
@@ -120,16 +126,24 @@ impl PlayerCommon {
         }
     }
 
+    fn remove_bet(&mut self, bet: &Bet) -> Result<Bet, PlayerError> {
+        if !self.bets.contains(bet) {
+            return Err(PlayerError::DontHaveBet(*bet));
+        }
+        if !self.can_remove_bet(bet) {
+            return Err(PlayerError::CantRemoveBet(*bet));
+        }
+        Ok(self
+            .bets
+            .remove(self.bets.iter().position(|b| b == bet).unwrap()))
+    }
+
     fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
         //eprintln!("{} making {}", self, b);
         // make sure there is no bet of this type already
-        assert_eq!(
-            self.bets
-                .iter()
-                .filter(|b2| b.bet_type == b2.bet_type)
-                .count(),
-            0
-        );
+        if bets_with_type_point!(&self.bets, b.bet_type, b.point()).count() > 0 {
+            return Err(PlayerError::DuplicateBet(b));
+        }
         // make sure we have the money for it
         if b.amount() > self.bankroll {
             return Err(PlayerError::NotEnoughBankroll());
@@ -499,5 +513,19 @@ mod tests {
             // test 2: yes odds
             assert!(!p.common.can_remove_bet(&b));
         }
+    }
+
+    #[test]
+    fn remove_bet() {
+        let mut p = PlayerStub::new();
+        let b1 = Bet::new_field(5);
+        let b2 = Bet::new_pass(5);
+        p.common.add_bet(b1).unwrap();
+        p.common.add_bet(b2).unwrap();
+        assert_eq!(p.common.bets.len(), 2);
+        p.common.remove_bet(&b1).unwrap();
+        assert_eq!(p.common.bets.len(), 1);
+        p.common.remove_bet(&b2).unwrap();
+        assert_eq!(p.common.bets.len(), 0);
     }
 }
