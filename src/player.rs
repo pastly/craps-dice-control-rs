@@ -93,30 +93,8 @@ impl PlayerCommon {
     fn can_remove_bet(&self, b: &Bet) -> bool {
         match b.bet_type {
             BetType::Pass | BetType::Come => {
-                let odds_type = if b.bet_type == BetType::Pass {
-                    BetType::PassOdds
-                } else {
-                    BetType::ComeOdds
-                };
-                // if there is a point, then more to check
-                if let Some(_) = b.point() {
-                    // check for odds on the same point value. It isn't okay to remove the flat bet
-                    // if it has odds attached
-                    // sanity: make sure either 0 or 1
-                    let num_odds_bets =
-                        bets_with_type_point!(&self.bets, odds_type, b.point()).count();
-                    assert!(num_odds_bets <= 1);
-                    num_odds_bets == 0
-                } else {
-                    // no point, so yes it's okay
-                    // sanity: let's make sure there is no Odds with it though. Can't have odds
-                    // without a point
-                    assert_eq!(
-                        bets_with_type_point!(&self.bets, odds_type, None).count(),
-                        0
-                    );
-                    true
-                }
+                // can remove up until there is a point set
+                b.point().is_none()
             }
             BetType::DontPass | BetType::DontCome => {
                 // can always remove as long as no odds.
@@ -126,10 +104,6 @@ impl PlayerCommon {
                     BetType::DontComeOdds
                 };
                 let num_odds_bets = bets_with_type_point!(&self.bets, odds_type, b.point()).count();
-                // sanity: if no point, then also no odds
-                if b.point().is_none() {
-                    assert_eq!(num_odds_bets, 0);
-                }
                 num_odds_bets == 0
             }
             BetType::PassOdds
@@ -138,16 +112,9 @@ impl PlayerCommon {
             | BetType::DontComeOdds
             | BetType::Place
             | BetType::Buy
-            | BetType::Lay => {
+            | BetType::Lay
+            | BetType::Field => {
                 // can always remove
-                // sanity: must always have a point
-                assert!(b.point().is_some());
-                true
-            }
-            BetType::Field => {
-                // can always remove
-                // sanity: must never have a point
-                assert!(b.point().is_none());
                 true
             }
         }
@@ -355,6 +322,26 @@ impl Player for PassPlayer {
     impl_playercommon_passthrough_for_player!();
 }
 
+pub struct PlayerStub {
+    common: PlayerCommon,
+}
+
+impl PlayerStub {
+    pub fn new() -> Self {
+        Self {
+            common: PlayerCommon::new(std::u32::MAX),
+        }
+    }
+}
+
+impl Player for PlayerStub {
+    fn make_bets(&mut self, _state: &TableState) -> Result<(), PlayerError> {
+        Ok(())
+    }
+
+    impl_playercommon_passthrough_for_player!();
+}
+
 pub struct FieldMartingalePlayer {
     common: PlayerCommon,
     num_lost: u32,
@@ -427,5 +414,90 @@ impl PlayerRecorder for BankrollRecorder {
 
     fn read_output(&self) -> Value {
         self.out.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PlayerStub;
+    use crate::bet::{Bet, BetType};
+
+    #[test]
+    fn can_remove_easy() {
+        // can remove all the bet types that can always be removed
+        for b in [
+            Bet::new_passodds(5, 4),
+            Bet::new_comeodds(5, 4),
+            Bet::new_dontpassodds(5, 4),
+            Bet::new_dontcomeodds(5, 4),
+            Bet::new_place(5, 4),
+            Bet::new_buy(5, 4),
+            Bet::new_lay(5, 4),
+            Bet::new_field(5),
+        ]
+        .iter()
+        {
+            let p = PlayerStub::new();
+            assert!(p.common.can_remove_bet(b));
+        }
+    }
+
+    #[test]
+    fn can_remove_flats() {
+        // can remove dont flats at all times as long as no odds
+        for b in [Bet::new_dontpass(5), Bet::new_dontcome(5)].iter() {
+            // with no point
+            let p = PlayerStub::new();
+            assert!(p.common.can_remove_bet(b));
+            // with point
+            let b_with_point = Bet::set_point(*b, 4).unwrap();
+            assert!(p.common.can_remove_bet(&b_with_point));
+        }
+        // can remove do flats as long no point
+        for b in [Bet::new_pass(5), Bet::new_come(5)].iter() {
+            // yes, with no point
+            let p = PlayerStub::new();
+            assert!(p.common.can_remove_bet(b));
+            // no, with point
+            let b_with_point = Bet::set_point(*b, 4).unwrap();
+            assert!(!p.common.can_remove_bet(&b_with_point));
+        }
+    }
+
+    #[test]
+    fn cant_remove_flats() {
+        // cant remove dont flats with point and odds
+        for b in [Bet::new_dontpass(5), Bet::new_dontcome(5)].iter() {
+            let mut p = PlayerStub::new();
+            // set the point
+            let b = Bet::set_point(*b, 4).unwrap();
+            // add an odds bet
+            let odds = if b.bet_type == BetType::DontPass {
+                Bet::new_dontpassodds(5, 4)
+            } else {
+                Bet::new_dontcomeodds(5, 4)
+            };
+            // make the odds bet
+            p.common.add_bet(odds).unwrap();
+            // finally, the test
+            assert!(!p.common.can_remove_bet(&b));
+        }
+        // cant remove do flats with point, regardless of odds
+        for b in [Bet::new_pass(5), Bet::new_come(5)].iter() {
+            let mut p = PlayerStub::new();
+            // set the point
+            let b = Bet::set_point(*b, 4).unwrap();
+            // test 1: no odds
+            assert!(!p.common.can_remove_bet(&b));
+            let odds = if b.bet_type == BetType::DontPass {
+                Bet::new_passodds(5, 4)
+            } else {
+                Bet::new_comeodds(5, 4)
+            };
+            // make the odds bet
+            p.common.add_bet(odds).unwrap();
+            // test 2: yes odds
+            assert!(!p.common.can_remove_bet(&b));
+        }
     }
 }
