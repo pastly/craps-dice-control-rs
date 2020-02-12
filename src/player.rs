@@ -528,4 +528,15 @@ mod tests {
         p.common.remove_bet(&b2).unwrap();
         assert_eq!(p.common.bets.len(), 0);
     }
+
+    #[test]
+    fn cant_add_dupe_bet() {
+        let mut p = PlayerStub::new();
+        let b1 = Bet::new_field(5);
+        let b2 = Bet::new_pass(5);
+        p.common.add_bet(b1).unwrap();
+        assert!(p.common.add_bet(b1).is_err());
+        p.common.add_bet(b2).unwrap();
+        assert!(p.common.add_bet(b2).is_err());
+    }
 }
