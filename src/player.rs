@@ -184,6 +184,7 @@ impl PlayerCommon {
             if b.amount() + vig > self.bankroll {
                 return Err(PlayerError::NotEnoughBankroll());
             }
+            self.bankroll -= vig;
         } else if LAY_PAY_UPFRONT && b.bet_type == BetType::Lay {
             // calc vig based on amount to be won
             unimplemented!();
