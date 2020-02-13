@@ -157,18 +157,29 @@ impl PlayerCommon {
             // Turn Vec<Result<_>, Err> into Result<Vec<_>, Err> and return early if that Err
             // exists
             .collect::<Result<Vec<Bet>, _>>()?;
-        // we have copies of each bet we need to remove. Now for each bet to remove, iterate over
-        // our actual bets and remove them
+        // we have copies of each bet we need to remove. Now for each bet to remove, do some
+        // bankroll bookkeeping and then iterate over our actual bets and remove them
         Ok(to_remove
             .into_iter()
             .map(|out_bet| {
+                // bankroll bookkeeping. Move money out of wagered and back to bank
+                self.wagered -= out_bet.amount();
+                self.bankroll += out_bet.amount();
+                // give back vigs if player paid them
+                if BUY_PAY_UPFRONT && out_bet.bet_type == BetType::Buy {
+                    let vig = out_bet.amount() * 5 / 100;
+                    self.bankroll += vig;
+                } else if LAY_PAY_UPFRONT && out_bet.bet_type == BetType::Lay {
+                    // calc vig based on amount to be won
+                    unimplemented!();
+                }
                 self.bets
                     .remove(self.bets.iter().position(|b| *b == out_bet).unwrap())
             })
             .collect())
     }
 
-    fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
+    pub(crate) fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
         //eprintln!("{} making {}", self, b);
         // make sure there is no bet of this type already
         if bets_with_type_point!(&self.bets, b.bet_type, b.point()).count() > 0 {
@@ -587,5 +598,17 @@ mod tests {
         assert!(p.common.add_bet(b1).is_err());
         p.common.add_bet(b2).unwrap();
         assert!(p.common.add_bet(b2).is_err());
+    }
+
+    #[test]
+    #[ignore]
+    fn buy_vig() {
+        unimplemented!();
+    }
+
+    #[test]
+    #[ignore]
+    fn lay_vig() {
+        unimplemented!();
     }
 }

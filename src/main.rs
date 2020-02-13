@@ -1,5 +1,6 @@
+use cdc2::dgeplayer::DGELay410MartingalePlayer;
 use cdc2::global::conf_def;
-use cdc2::player::{BankrollRecorder, FieldMartingalePlayer, Player};
+use cdc2::player::{BankrollRecorder, Player};
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
@@ -195,7 +196,8 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 Err(_) => return Err(()),
             };
             let mut table = Table::new(roll_gen);
-            let mut p = FieldMartingalePlayer::new(bank, 3000);
+            //let mut p = FieldMartingalePlayer::new(bank, 3000);
+            let mut p = DGELay410MartingalePlayer::new(bank);
             p.attach_recorder(recorder);
             table.add_player(Box::new(p));
             for _ in 0..num_rolls {
