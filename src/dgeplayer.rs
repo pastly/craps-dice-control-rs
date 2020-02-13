@@ -3,7 +3,15 @@ use crate::player::*;
 use crate::table::TableState;
 use serde_json::Value;
 
-const LAY_4_10_MARTINGALE: [u32; 8] = [0, 0, 0, 5, 25, 150, 500, 3000];
+// https://youtu.be/BG8EyJTRO_U?t=150
+// When 0, 1, 2, or 3 4s have been seen since the last 7, bet nothing.
+// Otherwise bet 50, 150, 500, or 3000 as the number of seens 4s increases. If
+// more than 7 4s are seen before a 7 is rolled, keep betting 3000.
+//
+// Same for 10s.
+//
+// DGE suggests vig upfront because that's how most casinos work.
+const LAY_4_10_MARTINGALE: [u32; 8] = [0, 0, 0, 0, 50, 150, 500, 3000];
 
 pub struct DGELay410MartingalePlayer {
     common: PlayerCommon,
