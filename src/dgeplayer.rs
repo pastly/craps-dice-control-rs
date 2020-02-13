@@ -6,7 +6,8 @@ use serde_json::Value;
 // https://youtu.be/BG8EyJTRO_U?t=150
 // When 0, 1, 2, or 3 4s have been seen since the last 7, bet nothing.
 // Otherwise bet 50, 150, 500, or 3000 as the number of seens 4s increases. If
-// more than 7 4s are seen before a 7 is rolled, keep betting 3000.
+// more than 7 4s are seen before a 7 is rolled, keep betting 3000. Do not care
+// about what the puck says: a come-out 7 counts and so does a 7 out.
 //
 // Same for 10s.
 //
