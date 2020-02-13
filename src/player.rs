@@ -44,7 +44,7 @@ impl fmt::Display for PlayerError {
 }
 
 #[derive(Default)]
-struct PlayerCommon {
+pub(crate) struct PlayerCommon {
     bets: Vec<Bet>,
     bankroll: u32,
     wagered: u32,
@@ -83,14 +83,14 @@ macro_rules! bets_with_type_point {
 }
 
 impl PlayerCommon {
-    fn new(bankroll: u32) -> Self {
+    pub(crate) fn new(bankroll: u32) -> Self {
         Self {
             bankroll,
             ..Default::default()
         }
     }
 
-    fn done(&mut self) {
+    pub(crate) fn done(&mut self) {
         if let Some(r) = &mut self.recorder {
             r.done()
         }
@@ -166,7 +166,7 @@ impl PlayerCommon {
         Ok(())
     }
 
-    fn react_to_roll(&mut self, table_state: &TableState) {
+    pub(crate) fn react_to_roll(&mut self, table_state: &TableState) {
         //eprintln!("Player reacting to {}", table_state);
         assert!(table_state.last_roll.is_some());
         // must have last roll bc of assert
@@ -222,18 +222,18 @@ impl PlayerCommon {
             .collect();
     }
 
-    fn record_activity(&mut self) {
+    pub(crate) fn record_activity(&mut self) {
         if let Some(r) = &mut self.recorder {
             r.record(self.bankroll, self.wagered, &self.bets);
         }
     }
 
-    fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
+    pub(crate) fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
         assert!(self.recorder.is_none());
         self.recorder = Some(r);
     }
 
-    fn recorder_output(&self) -> Value {
+    pub(crate) fn recorder_output(&self) -> Value {
         if let Some(r) = &self.recorder {
             r.read_output()
         } else {
