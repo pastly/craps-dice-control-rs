@@ -45,7 +45,7 @@ impl fmt::Display for PlayerError {
 
 #[derive(Default)]
 pub(crate) struct PlayerCommon {
-    bets: Vec<Bet>,
+    pub(crate) bets: Vec<Bet>,
     bankroll: u32,
     wagered: u32,
     recorder: Option<Box<dyn PlayerRecorder>>,
@@ -126,6 +126,7 @@ impl PlayerCommon {
         }
     }
 
+    #[cfg(test)]
     fn remove_bet(&mut self, bet: &Bet) -> Result<Bet, PlayerError> {
         if !self.bets.contains(bet) {
             return Err(PlayerError::DontHaveBet(*bet));
@@ -136,6 +137,35 @@ impl PlayerCommon {
         Ok(self
             .bets
             .remove(self.bets.iter().position(|b| b == bet).unwrap()))
+    }
+
+    pub(crate) fn remove_bets_with_type_point(
+        &mut self,
+        bt: BetType,
+        point: Option<u8>,
+    ) -> Result<Vec<Bet>, PlayerError> {
+        // iterate over a copy of each bet
+        let to_remove: Vec<Bet> = bets_with_type_point!(self.bets.clone(), bt, point)
+            // check that each can be removed
+            .map(|b| {
+                if !self.can_remove_bet(&b) {
+                    Err(PlayerError::CantRemoveBet(b))
+                } else {
+                    Ok(b)
+                }
+            })
+            // Turn Vec<Result<_>, Err> into Result<Vec<_>, Err> and return early if that Err
+            // exists
+            .collect::<Result<Vec<Bet>, _>>()?;
+        // we have copies of each bet we need to remove. Now for each bet to remove, iterate over
+        // our actual bets and remove them
+        Ok(to_remove
+            .into_iter()
+            .map(|out_bet| {
+                self.bets
+                    .remove(self.bets.iter().position(|b| *b == out_bet).unwrap())
+            })
+            .collect())
     }
 
     fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
@@ -526,6 +556,24 @@ mod tests {
         p.common.remove_bet(&b1).unwrap();
         assert_eq!(p.common.bets.len(), 1);
         p.common.remove_bet(&b2).unwrap();
+        assert_eq!(p.common.bets.len(), 0);
+    }
+
+    #[test]
+    fn remove_bets() {
+        let mut p = PlayerStub::new();
+        let b1 = Bet::new_field(5);
+        let b2 = Bet::new_pass(5);
+        p.common.add_bet(b1).unwrap();
+        p.common.add_bet(b2).unwrap();
+        assert_eq!(p.common.bets.len(), 2);
+        p.common
+            .remove_bets_with_type_point(b1.bet_type, b1.point())
+            .unwrap();
+        assert_eq!(p.common.bets.len(), 1);
+        p.common
+            .remove_bets_with_type_point(b2.bet_type, b2.point())
+            .unwrap();
         assert_eq!(p.common.bets.len(), 0);
     }
 
