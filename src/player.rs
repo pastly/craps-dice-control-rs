@@ -128,6 +128,7 @@ impl PlayerCommon {
 
     #[cfg(test)]
     fn remove_bet(&mut self, bet: &Bet) -> Result<Bet, PlayerError> {
+        panic!("PlayerCommon::remove_bet() doesn't calculate vig");
         if !self.bets.contains(bet) {
             return Err(PlayerError::DontHaveBet(*bet));
         }
