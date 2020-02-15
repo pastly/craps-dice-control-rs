@@ -2,11 +2,14 @@ use crate::bet::{Bet, BetType};
 use crate::roll::Roll;
 use crate::table::TableState;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 
 pub(crate) const BUY_PAY_UPFRONT: bool = true;
 pub(crate) const LAY_PAY_UPFRONT: bool = true;
+const BANKROLL_RECORDER_LABEL: &str = "bankroll";
+const ROLL_RECORDER_LABEL: &str = "rolls";
 
 pub trait Player {
     fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError>;
@@ -21,6 +24,7 @@ pub trait PlayerRecorder {
     fn record(&mut self, bank: u32, wage: u32, bets: &[Bet], state: &TableState);
     fn done(&mut self);
     fn read_output(&self) -> Value;
+    fn label(&self) -> &'static str;
 }
 
 #[derive(Debug)]
@@ -49,7 +53,7 @@ pub(crate) struct PlayerCommon {
     pub(crate) bets: Vec<Bet>,
     bankroll: u32,
     wagered: u32,
-    recorder: Option<Box<dyn PlayerRecorder>>,
+    recorders: Vec<Box<dyn PlayerRecorder>>,
 }
 
 ///// Take something that impl Iterator and return an Iterator over bets that have the given type.
@@ -92,8 +96,8 @@ impl PlayerCommon {
     }
 
     pub(crate) fn done(&mut self) {
-        if let Some(r) = &mut self.recorder {
-            r.done()
+        for r in self.recorders.iter_mut() {
+            r.done();
         }
     }
 
@@ -266,22 +270,21 @@ impl PlayerCommon {
     }
 
     pub(crate) fn record_activity(&mut self, state: &TableState) {
-        if let Some(r) = &mut self.recorder {
+        for r in self.recorders.iter_mut() {
             r.record(self.bankroll, self.wagered, &self.bets, state);
         }
     }
 
     pub(crate) fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
-        assert!(self.recorder.is_none());
-        self.recorder = Some(r);
+        self.recorders.push(r);
     }
 
     pub(crate) fn recorder_output(&self) -> Value {
-        if let Some(r) = &self.recorder {
-            r.read_output()
-        } else {
-            Value::Null
+        let mut ret = HashMap::new();
+        for r in self.recorders.iter() {
+            ret.insert(r.label(), r.read_output());
         }
+        json!(ret)
     }
 }
 
@@ -480,6 +483,10 @@ impl PlayerRecorder for BankrollRecorder {
     fn read_output(&self) -> Value {
         self.out.clone()
     }
+
+    fn label(&self) -> &'static str {
+        BANKROLL_RECORDER_LABEL
+    }
 }
 
 #[derive(Default)]
@@ -510,6 +517,10 @@ impl PlayerRecorder for RollRecorder {
 
     fn read_output(&self) -> Value {
         self.out.clone()
+    }
+
+    fn label(&self) -> &'static str {
+        ROLL_RECORDER_LABEL
     }
 }
 

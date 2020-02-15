@@ -204,13 +204,6 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let results = (0..num_games)
         .into_par_iter()
         .map(|game_idx| {
-            let recorder = Box::new(match outfmt {
-                //SimulateOutFmt::BankrollVsTime | SimulateOutFmt::BankrollVsTimeMedrange => {
-                //    BankrollRecorder::new()
-                //}
-                SimulateOutFmt::Rolls => RollRecorder::new(),
-                _ => unimplemented!(),
-            });
             let roll_gen = match get_roll_gen(args) {
                 Ok(rg) => rg,
                 Err(_) => return Err(()),
@@ -218,7 +211,8 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             let mut table = Table::new(roll_gen);
             //let mut p = FieldMartingalePlayer::new(bank, 3000);
             let mut p = DGELay410MartingalePlayer::new(bank);
-            p.attach_recorder(recorder);
+            p.attach_recorder(Box::new(RollRecorder::new()));
+            p.attach_recorder(Box::new(BankrollRecorder::new()));
             table.add_player(Box::new(p));
             for _ in 0..num_rolls {
                 let finished_players = table.loop_once();
