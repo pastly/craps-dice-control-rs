@@ -1,4 +1,5 @@
 use crate::bet::{Bet, BetType};
+use crate::roll::Roll;
 use crate::table::TableState;
 use serde_json::{json, Value};
 use std::error::Error;
@@ -11,13 +12,13 @@ pub trait Player {
     fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError>;
     fn react_to_roll(&mut self, table_state: &TableState);
     fn done(&mut self);
-    fn record_activity(&mut self);
+    fn record_activity(&mut self, state: &TableState);
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>);
     fn recorder_output(&self) -> Value;
 }
 
 pub trait PlayerRecorder {
-    fn record(&mut self, bank: u32, wage: u32, bets: &[Bet]);
+    fn record(&mut self, bank: u32, wage: u32, bets: &[Bet], state: &TableState);
     fn done(&mut self);
     fn read_output(&self) -> Value;
 }
@@ -282,9 +283,9 @@ impl PlayerCommon {
             .collect();
     }
 
-    pub(crate) fn record_activity(&mut self) {
+    pub(crate) fn record_activity(&mut self, state: &TableState) {
         if let Some(r) = &mut self.recorder {
-            r.record(self.bankroll, self.wagered, &self.bets);
+            r.record(self.bankroll, self.wagered, &self.bets, state);
         }
     }
 
@@ -336,8 +337,8 @@ macro_rules! impl_playercommon_passthrough_for_player {
             self.common.react_to_roll(table_state)
         }
 
-        fn record_activity(&mut self) {
-            self.common.record_activity()
+        fn record_activity(&mut self, state: &TableState) {
+            self.common.record_activity(state)
         }
 
         fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>) {
@@ -484,9 +485,40 @@ impl BankrollRecorder {
 }
 
 impl PlayerRecorder for BankrollRecorder {
-    fn record(&mut self, bank: u32, _wage: u32, _bets: &[Bet]) {
+    fn record(&mut self, bank: u32, _wage: u32, _bets: &[Bet], _state: &TableState) {
         //let _ = writeln!(self.file, "{} {}", self.roll_num, bank);
         self.data.push(bank);
+    }
+
+    fn done(&mut self) {
+        self.out = json!(&self.data);
+        self.data.clear();
+    }
+
+    fn read_output(&self) -> Value {
+        self.out.clone()
+    }
+}
+
+#[derive(Default)]
+pub struct RollRecorder {
+    out: Value,
+    data: Vec<Roll>,
+}
+
+impl RollRecorder {
+    pub fn new() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+}
+
+impl PlayerRecorder for RollRecorder {
+    fn record(&mut self, _bank: u32, _wage: u32, _bets: &[Bet], state: &TableState) {
+        if let Some(r) = state.last_roll {
+            self.data.push(r);
+        }
     }
 
     fn done(&mut self) {

@@ -1,3 +1,4 @@
+use serde::Serialize;
 use std::error::Error;
 use std::fmt;
 
@@ -15,7 +16,7 @@ impl fmt::Display for RollError {
     }
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(Serialize, PartialEq, Copy, Clone, Debug)]
 pub struct Roll {
     dice: [u8; 2],
 }

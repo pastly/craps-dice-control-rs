@@ -1,6 +1,6 @@
 use cdc2::dgeplayer::DGELay410MartingalePlayer;
 use cdc2::global::conf_def;
-use cdc2::player::{BankrollRecorder, Player};
+use cdc2::player::{BankrollRecorder, Player, RollRecorder};
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
@@ -44,6 +44,7 @@ arg_enum! {
     enum SimulateOutFmt {
         BankrollVsTime,
         BankrollVsTimeMedrange,
+        Rolls,
     }
 }
 
@@ -204,9 +205,11 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
         .into_par_iter()
         .map(|game_idx| {
             let recorder = Box::new(match outfmt {
-                SimulateOutFmt::BankrollVsTime | SimulateOutFmt::BankrollVsTimeMedrange => {
-                    BankrollRecorder::new()
-                }
+                //SimulateOutFmt::BankrollVsTime | SimulateOutFmt::BankrollVsTimeMedrange => {
+                //    BankrollRecorder::new()
+                //}
+                SimulateOutFmt::Rolls => RollRecorder::new(),
+                _ => unimplemented!(),
             });
             let roll_gen = match get_roll_gen(args) {
                 Ok(rg) => rg,
@@ -231,6 +234,9 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
         // ignore errors
         .filter_map(|o| o.ok());
     match outfmt {
+        SimulateOutFmt::Rolls => {
+            results.for_each(|(_, o)| println!("{}", json!(o)));
+        }
         SimulateOutFmt::BankrollVsTime => {
             results.for_each(|(_, o)| println!("{}", json!(o)));
         }

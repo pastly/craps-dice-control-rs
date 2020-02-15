@@ -55,7 +55,7 @@ impl Table {
             for mut p in self.players.drain(0..) {
                 // Do useful work here
                 let res = p.make_bets(&self.state);
-                p.record_activity();
+                p.record_activity(&self.state);
                 // If we want to remove it, tell the player it is done and neglect to add it to the
                 // keep vector
                 if let Err(_e) = res {
