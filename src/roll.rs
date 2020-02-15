@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::ser::{Serialize, SerializeTuple, Serializer};
 use std::error::Error;
 use std::fmt;
 
@@ -16,7 +16,7 @@ impl fmt::Display for RollError {
     }
 }
 
-#[derive(Serialize, PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub struct Roll {
     dice: [u8; 2],
 }
@@ -45,6 +45,17 @@ impl Roll {
     }
 }
 
+impl Serialize for Roll {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut tup = serializer.serialize_tuple(2)?;
+        tup.serialize_element(&self.dice[0])?;
+        tup.serialize_element(&self.dice[1])?;
+        tup.end()
+    }
+}
 impl fmt::Display for Roll {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Roll<{}, {}>", self.dice[0], self.dice[1])
