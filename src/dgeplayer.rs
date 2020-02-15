@@ -50,6 +50,7 @@ impl Player for DGELay410MartingalePlayer {
                 return Ok(());
             }
         };
+        //eprintln!("{}", state.last_roll.unwrap());
         for point in [Some(4), Some(10)].iter() {
             self.common
                 .remove_bets_with_type_point(BetType::Lay, *point)?;
@@ -58,8 +59,22 @@ impl Player for DGELay410MartingalePlayer {
         let idx_four = std::cmp::min(self.num_fours as usize, arr_len - 1);
         let idx_ten = std::cmp::min(self.num_tens as usize, arr_len - 1);
         if LAY_4_10_MARTINGALE[idx_four] > 0 {
-            let amt = LAY_4_10_MARTINGALE[idx_four];
-            self.common.add_bet(Bet::new_lay(amt, 4))?;
+            let mut amt = LAY_4_10_MARTINGALE[idx_four];
+            let mut b = Bet::new_lay(amt, 4);
+            let mut needed = amt + if LAY_PAY_UPFRONT { b.vig_amount() } else { 0 };
+            if needed > self.common.bankroll() {
+                if LAY_PAY_UPFRONT {
+                    amt = self.common.bankroll() * 39 / 40;
+                    b = Bet::new_lay(amt, 4);
+                    needed = amt + b.vig_amount();
+                } else {
+                    amt = self.common.bankroll();
+                    b = Bet::new_lay(amt, 4);
+                    needed = amt;
+                }
+            }
+            assert!(needed <= self.common.bankroll());
+            self.common.add_bet(b)?;
         }
         if LAY_4_10_MARTINGALE[idx_ten] > 0 {
             let amt = LAY_4_10_MARTINGALE[idx_ten];

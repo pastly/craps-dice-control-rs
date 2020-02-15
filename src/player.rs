@@ -4,8 +4,8 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::fmt;
 
-const BUY_PAY_UPFRONT: bool = true;
-const LAY_PAY_UPFRONT: bool = true;
+pub(crate) const BUY_PAY_UPFRONT: bool = true;
+pub(crate) const LAY_PAY_UPFRONT: bool = true;
 
 pub trait Player {
     fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError>;
@@ -96,6 +96,10 @@ impl PlayerCommon {
         }
     }
 
+    pub(crate) fn bankroll(&self) -> u32 {
+        self.bankroll
+    }
+
     fn can_remove_bet(&self, b: Bet) -> bool {
         match b.bet_type {
             BetType::Pass | BetType::Come => {
@@ -145,6 +149,10 @@ impl PlayerCommon {
         bt: BetType,
         point: Option<u8>,
     ) -> Result<Vec<Bet>, PlayerError> {
+        if self.bets.is_empty() {
+            return Ok(vec![]);
+        }
+        //eprintln!("{} removing {:?} bets with point {:?}", self, bt, point);
         // iterate over a copy of each bet
         let to_remove: Vec<Bet> = bets_with_type_point!(self.bets.clone(), bt, point)
             // check that each can be removed
