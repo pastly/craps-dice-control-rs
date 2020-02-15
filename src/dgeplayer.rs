@@ -53,7 +53,7 @@ impl Player for DGELay410MartingalePlayer {
         //eprintln!("{}", state.last_roll.unwrap());
         for point in [Some(4), Some(10)].iter() {
             self.common
-                .remove_bets_with_type_point(BetType::Lay, *point)?;
+                .remove_bet_with_type_point(BetType::Lay, *point)?;
         }
         let arr_len = LAY_4_10_MARTINGALE.len();
         let idx_four = std::cmp::min(self.num_fours as usize, arr_len - 1);

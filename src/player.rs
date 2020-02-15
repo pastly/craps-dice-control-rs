@@ -131,27 +131,13 @@ impl PlayerCommon {
         }
     }
 
-    //#[cfg(test)]
-    //fn remove_bet(&mut self, bet: &Bet) -> Result<Bet, PlayerError> {
-    //    panic!("PlayerCommon::remove_bet() doesn't calculate vig");
-    //    if !self.bets.contains(bet) {
-    //        return Err(PlayerError::DontHaveBet(*bet));
-    //    }
-    //    if !self.can_remove_bet(bet) {
-    //        return Err(PlayerError::CantRemoveBet(*bet));
-    //    }
-    //    Ok(self
-    //        .bets
-    //        .remove(self.bets.iter().position(|b| b == bet).unwrap()))
-    //}
-
-    pub(crate) fn remove_bets_with_type_point(
+    pub(crate) fn remove_bet_with_type_point(
         &mut self,
         bt: BetType,
         point: Option<u8>,
-    ) -> Result<Vec<Bet>, PlayerError> {
+    ) -> Result<Option<Bet>, PlayerError> {
         if self.bets.is_empty() {
-            return Ok(vec![]);
+            return Ok(None);
         }
         //eprintln!("{} removing {:?} bets with point {:?}", self, bt, point);
         // iterate over a copy of each bet
@@ -167,28 +153,24 @@ impl PlayerCommon {
             // Turn Vec<Result<_>, Err> into Result<Vec<_>, Err> and return early if that Err
             // exists
             .collect::<Result<Vec<Bet>, _>>()?;
-        // we have copies of each bet we need to remove. Now for each bet to remove, do some
-        // bankroll bookkeeping and then iterate over our actual bets and remove them
-        Ok(to_remove
-            .into_iter()
-            .map(|out_bet| {
-                // bankroll bookkeeping. Move money out of wagered and back to bank
-                let total_return = out_bet.amount()
-                    + if BUY_PAY_UPFRONT && out_bet.bet_type == BetType::Buy
-                        || LAY_PAY_UPFRONT && out_bet.bet_type == BetType::Lay
-                    {
-                        out_bet.vig_amount()
-                    } else {
-                        0
-                    };
-                // return bet amount and vig (if any) to bankroll. Note that vig wasn't wagered
-                self.bankroll += total_return;
-                self.wagered -= out_bet.amount();
-                // actually remove the bet
-                self.bets
-                    .remove(self.bets.iter().position(|b| *b == out_bet).unwrap())
-            })
-            .collect())
+        // there should only ever be one bet of a given (type, point) pair
+        assert_eq!(to_remove.len(), 1);
+        let to_remove = to_remove[0];
+        let total_return = to_remove.amount()
+            + if BUY_PAY_UPFRONT && to_remove.bet_type == BetType::Buy
+                || LAY_PAY_UPFRONT && to_remove.bet_type == BetType::Lay
+            {
+                to_remove.vig_amount()
+            } else {
+                0
+            };
+        // return bet amount and vig (if any) to bankroll. Note that vig wasn't wagered
+        self.bankroll += total_return;
+        self.wagered -= to_remove.amount();
+        // actually remove the bet
+        Ok(Some(self.bets.remove(
+            self.bets.iter().position(|b| *b == to_remove).unwrap(),
+        )))
     }
 
     pub(crate) fn add_bet(&mut self, b: Bet) -> Result<(), PlayerError> {
@@ -617,22 +599,8 @@ mod tests {
         }
     }
 
-    //#[test]
-    //fn remove_bet() {
-    //    let mut p = PlayerStub::default();
-    //    let b1 = Bet::new_field(5);
-    //    let b2 = Bet::new_pass(5);
-    //    p.common.add_bet(b1).unwrap();
-    //    p.common.add_bet(b2).unwrap();
-    //    assert_eq!(p.common.bets.len(), 2);
-    //    p.common.remove_bet(&b1).unwrap();
-    //    assert_eq!(p.common.bets.len(), 1);
-    //    p.common.remove_bet(&b2).unwrap();
-    //    assert_eq!(p.common.bets.len(), 0);
-    //}
-
     #[test]
-    fn remove_bets() {
+    fn remove_bet() {
         let mut p = PlayerStub::default();
         let b1 = Bet::new_field(5);
         let b2 = Bet::new_pass(5);
@@ -640,11 +608,11 @@ mod tests {
         p.common.add_bet(b2).unwrap();
         assert_eq!(p.common.bets.len(), 2);
         p.common
-            .remove_bets_with_type_point(b1.bet_type, b1.point())
+            .remove_bet_with_type_point(b1.bet_type, b1.point())
             .unwrap();
         assert_eq!(p.common.bets.len(), 1);
         p.common
-            .remove_bets_with_type_point(b2.bet_type, b2.point())
+            .remove_bet_with_type_point(b2.bet_type, b2.point())
             .unwrap();
         assert_eq!(p.common.bets.len(), 0);
     }
@@ -677,7 +645,7 @@ mod tests {
             assert_eq!(p.common.bankroll, bank - amt - b.vig_amount());
             assert_eq!(p.common.wagered, amt);
             p.common
-                .remove_bets_with_type_point(BetType::Buy, Some(4))
+                .remove_bet_with_type_point(BetType::Buy, Some(4))
                 .unwrap();
             assert_eq!(p.common.bets.len(), 0);
             // player should get everything bank
@@ -754,7 +722,7 @@ mod tests {
             assert_eq!(p.common.bankroll, bank - amt - b.vig_amount());
             assert_eq!(p.common.wagered, amt);
             p.common
-                .remove_bets_with_type_point(BetType::Lay, Some(4))
+                .remove_bet_with_type_point(BetType::Lay, Some(4))
                 .unwrap();
             assert_eq!(p.common.bets.len(), 0);
             // player should get everything bank
