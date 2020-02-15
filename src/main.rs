@@ -7,8 +7,10 @@ use cdc2::table::Table;
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
 use serde_json::json;
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::fs::OpenOptions;
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::thread::{self, JoinHandle};
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -121,16 +123,16 @@ fn percentile_summary(vals: &mut Vec<u32>) -> [u32; 7] {
     ]
 }
 
-struct BankrollMedrangeIter {
+struct BankrollMedrangeIter<R: Read + Seek> {
     num_games: u32,
     num_rolls: u32,
     int_size: usize,
-    file: File,
+    file: R,
     col: u32,
 }
 
-impl BankrollMedrangeIter {
-    fn new(num_games: u32, num_rolls: u32, int_size: usize, file: File) -> Self {
+impl<R: Read + Seek> BankrollMedrangeIter<R> {
+    fn new(num_games: u32, num_rolls: u32, int_size: usize, file: R) -> Self {
         Self {
             num_games,
             num_rolls,
@@ -141,7 +143,7 @@ impl BankrollMedrangeIter {
     }
 }
 
-impl Iterator for BankrollMedrangeIter {
+impl<R: Read + Seek> Iterator for BankrollMedrangeIter<R> {
     type Item = (u32, [u32; 7]);
     fn next(&mut self) -> Option<Self::Item> {
         if self.col == self.num_rolls {
@@ -178,11 +180,26 @@ fn u8_to_u32(v: &mut [u8]) -> &[u32] {
     body
 }
 
+fn spawn_recv_thread<W: 'static + Write + Send>(
+    receiver: Receiver<Vec<u32>>,
+    mut buf: W,
+) -> JoinHandle<W> {
+    thread::spawn(move || {
+        for mut game in receiver.iter() {
+            let v = u32_to_u8(&mut game);
+            buf.write_all(v).unwrap();
+        }
+        buf.flush().unwrap();
+        buf
+    })
+}
+
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
     let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
     let outfmt = parse_as!(SimulateOutFmt, args.value_of("outfmt").unwrap());
+    let in_mem = args.is_present("inmemory");
     let results = (0..num_games)
         .into_par_iter()
         .map(|game_idx| {
@@ -218,40 +235,41 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             results.for_each(|(_, o)| println!("{}", json!(o)));
         }
         SimulateOutFmt::BankrollVsTimeMedrange => {
-            use std::sync::mpsc::{sync_channel, Receiver};
-            use std::thread;
             let int_size = 4;
             let file_len = int_size * num_rolls as usize * num_games as usize;
-            let file_name = "mmap.bin";
-            eprintln!("Writing to file");
-            {
-                let (sender, receiver): (_, Receiver<Vec<u32>>) = sync_channel(1);
-                let mut file = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .open(file_name)
-                    .unwrap();
-                file.set_len(file_len as u64).unwrap();
-                thread::spawn(move || {
-                    for mut game in receiver.iter() {
-                        let v = u32_to_u8(&mut game);
-                        file.write_all(v).unwrap();
-                    }
-                    file.flush().unwrap();
-                });
+            let (sender, receiver): (_, Receiver<Vec<u32>>) = sync_channel(1);
+            if in_mem {
+                let mut buf = Cursor::new(vec![0u8; file_len]);
+                let handle = spawn_recv_thread(receiver, buf);
                 results.for_each_with(sender, |s, (_, game)| {
                     let game: Vec<u32> = serde_json::from_value(game).unwrap();
                     s.send(game).unwrap();
                 });
-            }
-            eprintln!("Reading back from file");
-            {
-                let file = OpenOptions::new().read(true).open(file_name).unwrap();
+                buf = handle.join().unwrap();
+                let iter = BankrollMedrangeIter::new(num_games, num_rolls, int_size, buf);
+                iter.par_bridge().for_each(|item| {
+                    println!("{}", json!(item));
+                });
+            } else {
+                let file_name = "mmap.bin";
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .read(true)
+                    .open(file_name)
+                    .unwrap();
+                file.set_len(file_len as u64).unwrap();
+                let handle = spawn_recv_thread(receiver, file);
+                results.for_each_with(sender, |s, (_, game)| {
+                    let game: Vec<u32> = serde_json::from_value(game).unwrap();
+                    s.send(game).unwrap();
+                });
+                file = handle.join().unwrap();
                 let iter = BankrollMedrangeIter::new(num_games, num_rolls, int_size, file);
                 iter.par_bridge().for_each(|item| {
                     println!("{}", json!(item));
                 });
-            }
+            };
         }
     };
     Ok(())
@@ -356,6 +374,11 @@ fn main() {
                         .default_value(conf_def::NUM_GAMES)
                         .validator(|v| validate_as!(u32, v))
                         .help("How many games to simulate"),
+                )
+                .arg(
+                    Arg::with_name("inmemory")
+                        .long("in-memory")
+                        .help("Store intermediate results in-memory instead of on disk"),
                 ),
         )
         .subcommand(
