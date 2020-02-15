@@ -393,7 +393,15 @@ pub struct PlayerStub {
 }
 
 impl PlayerStub {
-    pub fn new() -> Self {
+    pub fn new(bankroll: u32) -> Self {
+        Self {
+            common: PlayerCommon::new(bankroll),
+        }
+    }
+}
+
+impl Default for PlayerStub {
+    fn default() -> Self {
         Self {
             common: PlayerCommon::new(std::u32::MAX),
         }
@@ -485,8 +493,10 @@ impl PlayerRecorder for BankrollRecorder {
 
 #[cfg(test)]
 mod tests {
-    use super::PlayerStub;
+    use super::{PlayerStub, BUY_PAY_UPFRONT, LAY_PAY_UPFRONT};
     use crate::bet::{Bet, BetType};
+    use crate::roll::Roll;
+    use crate::table::TableState;
 
     #[test]
     fn can_remove_easy() {
@@ -503,7 +513,7 @@ mod tests {
         ]
         .iter()
         {
-            let p = PlayerStub::new();
+            let p = PlayerStub::default();
             assert!(p.common.can_remove_bet(b));
         }
     }
@@ -513,7 +523,7 @@ mod tests {
         // can remove dont flats at all times as long as no odds
         for b in [Bet::new_dontpass(5), Bet::new_dontcome(5)].iter() {
             // with no point
-            let p = PlayerStub::new();
+            let p = PlayerStub::default();
             assert!(p.common.can_remove_bet(b));
             // with point
             let b_with_point = Bet::set_point(*b, 4).unwrap();
@@ -522,7 +532,7 @@ mod tests {
         // can remove do flats as long no point
         for b in [Bet::new_pass(5), Bet::new_come(5)].iter() {
             // yes, with no point
-            let p = PlayerStub::new();
+            let p = PlayerStub::default();
             assert!(p.common.can_remove_bet(b));
             // no, with point
             let b_with_point = Bet::set_point(*b, 4).unwrap();
@@ -534,7 +544,7 @@ mod tests {
     fn cant_remove_flats() {
         // cant remove dont flats with point and odds
         for b in [Bet::new_dontpass(5), Bet::new_dontcome(5)].iter() {
-            let mut p = PlayerStub::new();
+            let mut p = PlayerStub::default();
             // set the point
             let b = Bet::set_point(*b, 4).unwrap();
             // add an odds bet
@@ -550,7 +560,7 @@ mod tests {
         }
         // cant remove do flats with point, regardless of odds
         for b in [Bet::new_pass(5), Bet::new_come(5)].iter() {
-            let mut p = PlayerStub::new();
+            let mut p = PlayerStub::default();
             // set the point
             let b = Bet::set_point(*b, 4).unwrap();
             // test 1: no odds
@@ -569,7 +579,7 @@ mod tests {
 
     //#[test]
     //fn remove_bet() {
-    //    let mut p = PlayerStub::new();
+    //    let mut p = PlayerStub::default();
     //    let b1 = Bet::new_field(5);
     //    let b2 = Bet::new_pass(5);
     //    p.common.add_bet(b1).unwrap();
@@ -583,7 +593,7 @@ mod tests {
 
     #[test]
     fn remove_bets() {
-        let mut p = PlayerStub::new();
+        let mut p = PlayerStub::default();
         let b1 = Bet::new_field(5);
         let b2 = Bet::new_pass(5);
         p.common.add_bet(b1).unwrap();
@@ -601,7 +611,7 @@ mod tests {
 
     #[test]
     fn cant_add_dupe_bet() {
-        let mut p = PlayerStub::new();
+        let mut p = PlayerStub::default();
         let b1 = Bet::new_field(5);
         let b2 = Bet::new_pass(5);
         p.common.add_bet(b1).unwrap();
@@ -611,14 +621,156 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn buy_vig() {
-        unimplemented!();
+    fn buy_vig_upfront() {
+        // BUY_PAY_UPFRONT is a const, so we only ever run this or buy_vig_on_win()
+        if !BUY_PAY_UPFRONT {
+            return;
+        }
+        // if buy vig paid upfront, make sure vig is taken from bankroll too. Check that wagered
+        // never included the vig.
+        {
+            let bank = 600;
+            let amt = 500;
+            let mut p = PlayerStub::new(bank);
+            let b = Bet::new_buy(amt, 4);
+            p.common.add_bet(b).unwrap();
+            assert_eq!(p.common.bankroll, bank - amt - b.vig_amount());
+            assert_eq!(p.common.wagered, amt);
+            p.common
+                .remove_bets_with_type_point(BetType::Buy, Some(4))
+                .unwrap();
+            assert_eq!(p.common.bets.len(), 0);
+            // player should get everything bank
+            assert_eq!(p.common.bankroll, bank);
+            // and nothing should be wagered
+            assert_eq!(p.common.wagered, 0);
+        }
+        // if amount + vig is more than bankroll, should fail.
+        {
+            for bank in [500, 501].iter() {
+                let amt = 500;
+                let mut p = PlayerStub::new(*bank);
+                let b = Bet::new_buy(amt, 4);
+                assert!(p.common.add_bet(b).is_err());
+            }
+        }
     }
 
     #[test]
-    #[ignore]
-    fn lay_vig() {
-        unimplemented!();
+    fn buy_vig_on_win() {
+        // BUY_PAY_UPFRONT is a const, so we only ever run this or buy_vig_upfront()
+        if BUY_PAY_UPFRONT {
+            return;
+        }
+        {
+            let bank = 600;
+            let amt = 500;
+            let mut p = PlayerStub::new(bank);
+            let b = Bet::new_buy(amt, 4);
+            p.common.add_bet(b).unwrap();
+            // vig is not taken out of bankroll, nor is it wagered
+            assert_eq!(p.common.bankroll, bank - amt);
+            assert_eq!(p.common.wagered, amt);
+            let r = Roll::new([1, 3]).unwrap();
+            let ts = TableState {
+                point: None,
+                last_roll: Some(r),
+            };
+            p.common.react_to_roll(&ts);
+            assert_eq!(p.common.bets.len(), 0);
+            // player should have winnings minus the vig
+            assert_eq!(
+                p.common.bankroll,
+                bank + b.win_amount(r).unwrap() - b.vig_amount()
+            );
+            // and nothing should be wagered
+            assert_eq!(p.common.wagered, 0);
+        }
+        // it doesn't matter if amount + vig is more than bnakroll bc don't pay vig upfront
+        {
+            for bank in [500, 501].iter() {
+                let amt = 500;
+                let mut p = PlayerStub::new(*bank);
+                let b = Bet::new_buy(amt, 4);
+                assert!(p.common.add_bet(b).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn lay_vig_upfront() {
+        // LAY_PAY_UPFRONT is a const, so we only ever run this or lay_vig_on_win()
+        if !LAY_PAY_UPFRONT {
+            return;
+        }
+        // if vig paid upfront, make sure vig is taken from bankroll too. Check that wagered
+        // never included the vig.
+        {
+            let bank = 600;
+            let amt = 500;
+            let mut p = PlayerStub::new(bank);
+            let b = Bet::new_lay(amt, 4);
+            p.common.add_bet(b).unwrap();
+            assert_eq!(p.common.bankroll, bank - amt - b.vig_amount());
+            assert_eq!(p.common.wagered, amt);
+            p.common
+                .remove_bets_with_type_point(BetType::Lay, Some(4))
+                .unwrap();
+            assert_eq!(p.common.bets.len(), 0);
+            // player should get everything bank
+            assert_eq!(p.common.bankroll, bank);
+            // and nothing should be wagered
+            assert_eq!(p.common.wagered, 0);
+        }
+        // if amount + vig is more than bankroll, should fail.
+        {
+            for bank in [500, 501].iter() {
+                let amt = 500;
+                let mut p = PlayerStub::new(*bank);
+                let b = Bet::new_lay(amt, 4);
+                assert!(p.common.add_bet(b).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn lay_vig_on_win() {
+        // LAY_PAY_UPFRONT is a const, so we only ever run this or lay_vig_upfront()
+        if LAY_PAY_UPFRONT {
+            return;
+        }
+        {
+            let bank = 600;
+            let amt = 500;
+            let mut p = PlayerStub::new(bank);
+            let b = Bet::new_lay(amt, 4);
+            p.common.add_bet(b).unwrap();
+            // vig is not taken out of bankroll, nor is it wagered
+            assert_eq!(p.common.bankroll, bank - amt);
+            assert_eq!(p.common.wagered, amt);
+            let r = Roll::new([3, 4]).unwrap();
+            let ts = TableState {
+                point: None,
+                last_roll: Some(r),
+            };
+            p.common.react_to_roll(&ts);
+            assert_eq!(p.common.bets.len(), 0);
+            // player should have winnings minus the vig
+            assert_eq!(
+                p.common.bankroll,
+                bank + b.win_amount(r).unwrap() - b.vig_amount()
+            );
+            // and nothing should be wagered
+            assert_eq!(p.common.wagered, 0);
+        }
+        // it doesn't matter if amount + vig is more than bnakroll bc don't pay vig upfront
+        {
+            for bank in [500, 501].iter() {
+                let amt = 500;
+                let mut p = PlayerStub::new(*bank);
+                let b = Bet::new_lay(amt, 4);
+                assert!(p.common.add_bet(b).is_ok());
+            }
+        }
     }
 }
