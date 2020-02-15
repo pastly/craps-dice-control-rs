@@ -96,7 +96,7 @@ impl PlayerCommon {
         }
     }
 
-    fn can_remove_bet(&self, b: &Bet) -> bool {
+    fn can_remove_bet(&self, b: Bet) -> bool {
         match b.bet_type {
             BetType::Pass | BetType::Come => {
                 // can remove up until there is a point set
@@ -149,7 +149,7 @@ impl PlayerCommon {
         let to_remove: Vec<Bet> = bets_with_type_point!(self.bets.clone(), bt, point)
             // check that each can be removed
             .map(|b| {
-                if !self.can_remove_bet(&b) {
+                if !self.can_remove_bet(b) {
                     Err(PlayerError::CantRemoveBet(b))
                 } else {
                     Ok(b)
@@ -514,7 +514,7 @@ mod tests {
         .iter()
         {
             let p = PlayerStub::default();
-            assert!(p.common.can_remove_bet(b));
+            assert!(p.common.can_remove_bet(*b));
         }
     }
 
@@ -524,19 +524,19 @@ mod tests {
         for b in [Bet::new_dontpass(5), Bet::new_dontcome(5)].iter() {
             // with no point
             let p = PlayerStub::default();
-            assert!(p.common.can_remove_bet(b));
+            assert!(p.common.can_remove_bet(*b));
             // with point
             let b_with_point = Bet::set_point(*b, 4).unwrap();
-            assert!(p.common.can_remove_bet(&b_with_point));
+            assert!(p.common.can_remove_bet(b_with_point));
         }
         // can remove do flats as long no point
         for b in [Bet::new_pass(5), Bet::new_come(5)].iter() {
             // yes, with no point
             let p = PlayerStub::default();
-            assert!(p.common.can_remove_bet(b));
+            assert!(p.common.can_remove_bet(*b));
             // no, with point
             let b_with_point = Bet::set_point(*b, 4).unwrap();
-            assert!(!p.common.can_remove_bet(&b_with_point));
+            assert!(!p.common.can_remove_bet(b_with_point));
         }
     }
 
@@ -556,7 +556,7 @@ mod tests {
             // make the odds bet
             p.common.add_bet(odds).unwrap();
             // finally, the test
-            assert!(!p.common.can_remove_bet(&b));
+            assert!(!p.common.can_remove_bet(b));
         }
         // cant remove do flats with point, regardless of odds
         for b in [Bet::new_pass(5), Bet::new_come(5)].iter() {
@@ -564,7 +564,7 @@ mod tests {
             // set the point
             let b = Bet::set_point(*b, 4).unwrap();
             // test 1: no odds
-            assert!(!p.common.can_remove_bet(&b));
+            assert!(!p.common.can_remove_bet(b));
             let odds = if b.bet_type == BetType::DontPass {
                 Bet::new_passodds(5, 4)
             } else {
@@ -573,7 +573,7 @@ mod tests {
             // make the odds bet
             p.common.add_bet(odds).unwrap();
             // test 2: yes odds
-            assert!(!p.common.can_remove_bet(&b));
+            assert!(!p.common.can_remove_bet(b));
         }
     }
 
