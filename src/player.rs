@@ -126,19 +126,19 @@ impl PlayerCommon {
         }
     }
 
-    #[cfg(test)]
-    fn remove_bet(&mut self, bet: &Bet) -> Result<Bet, PlayerError> {
-        panic!("PlayerCommon::remove_bet() doesn't calculate vig");
-        if !self.bets.contains(bet) {
-            return Err(PlayerError::DontHaveBet(*bet));
-        }
-        if !self.can_remove_bet(bet) {
-            return Err(PlayerError::CantRemoveBet(*bet));
-        }
-        Ok(self
-            .bets
-            .remove(self.bets.iter().position(|b| b == bet).unwrap()))
-    }
+    //#[cfg(test)]
+    //fn remove_bet(&mut self, bet: &Bet) -> Result<Bet, PlayerError> {
+    //    panic!("PlayerCommon::remove_bet() doesn't calculate vig");
+    //    if !self.bets.contains(bet) {
+    //        return Err(PlayerError::DontHaveBet(*bet));
+    //    }
+    //    if !self.can_remove_bet(bet) {
+    //        return Err(PlayerError::CantRemoveBet(*bet));
+    //    }
+    //    Ok(self
+    //        .bets
+    //        .remove(self.bets.iter().position(|b| b == bet).unwrap()))
+    //}
 
     pub(crate) fn remove_bets_with_type_point(
         &mut self,
@@ -164,16 +164,18 @@ impl PlayerCommon {
             .into_iter()
             .map(|out_bet| {
                 // bankroll bookkeeping. Move money out of wagered and back to bank
+                let total_return = out_bet.amount()
+                    + if BUY_PAY_UPFRONT && out_bet.bet_type == BetType::Buy
+                        || LAY_PAY_UPFRONT && out_bet.bet_type == BetType::Lay
+                    {
+                        out_bet.vig_amount()
+                    } else {
+                        0
+                    };
+                // return bet amount and vig (if any) to bankroll. Note that vig wasn't wagered
+                self.bankroll += total_return;
                 self.wagered -= out_bet.amount();
-                self.bankroll += out_bet.amount();
-                // give back vigs if player paid them
-                if BUY_PAY_UPFRONT && out_bet.bet_type == BetType::Buy {
-                    let vig = out_bet.amount() * 5 / 100;
-                    self.bankroll += vig;
-                } else if LAY_PAY_UPFRONT && out_bet.bet_type == BetType::Lay {
-                    // calc vig based on amount to be won
-                    unimplemented!();
-                }
+                // actually remove the bet
                 self.bets
                     .remove(self.bets.iter().position(|b| *b == out_bet).unwrap())
             })
@@ -187,22 +189,19 @@ impl PlayerCommon {
             return Err(PlayerError::DuplicateBet(b));
         }
         // make sure we have the money for it
-        if b.amount() > self.bankroll {
+        let total_needed = b.amount()
+            + if BUY_PAY_UPFRONT && b.bet_type == BetType::Buy
+                || LAY_PAY_UPFRONT && b.bet_type == BetType::Lay
+            {
+                b.vig_amount()
+            } else {
+                0
+            };
+        if total_needed > self.bankroll {
             return Err(PlayerError::NotEnoughBankroll());
         }
-        // and make sure we have the money for the vig too if paid up front
-        if BUY_PAY_UPFRONT && b.bet_type == BetType::Buy {
-            let vig = b.amount() * 5 / 100;
-            if b.amount() + vig > self.bankroll {
-                return Err(PlayerError::NotEnoughBankroll());
-            }
-            self.bankroll -= vig;
-        } else if LAY_PAY_UPFRONT && b.bet_type == BetType::Lay {
-            // calc vig based on amount to be won
-            unimplemented!();
-        }
-        // move from bankroll to wagered
-        self.bankroll -= b.amount();
+        // move from bankroll to wagered. note that the vig isn't wagered
+        self.bankroll -= total_needed;
         self.wagered += b.amount();
         // add to list of bets
         self.bets.push(b);
@@ -229,8 +228,18 @@ impl PlayerCommon {
                 assert!(!wins.contains(&b));
             }
             for b in wins.iter() {
-                let winnings = b.win_amount(r).unwrap();
+                // calculate winnings, less any vig
+                let winnings = b.win_amount(r).unwrap()
+                    - if !BUY_PAY_UPFRONT && b.bet_type == BetType::Buy
+                        || !LAY_PAY_UPFRONT && b.bet_type == BetType::Lay
+                    {
+                        b.vig_amount()
+                    } else {
+                        0
+                    };
                 //eprintln!("Player won {} from {}", winnings, b);
+                // give winnings to bankroll, and move bet amount from wagered to bankroll. Note
+                // that vig was removed from winnings already
                 self.bankroll += winnings + b.amount();
                 self.wagered -= b.amount();
             }
@@ -558,19 +567,19 @@ mod tests {
         }
     }
 
-    #[test]
-    fn remove_bet() {
-        let mut p = PlayerStub::new();
-        let b1 = Bet::new_field(5);
-        let b2 = Bet::new_pass(5);
-        p.common.add_bet(b1).unwrap();
-        p.common.add_bet(b2).unwrap();
-        assert_eq!(p.common.bets.len(), 2);
-        p.common.remove_bet(&b1).unwrap();
-        assert_eq!(p.common.bets.len(), 1);
-        p.common.remove_bet(&b2).unwrap();
-        assert_eq!(p.common.bets.len(), 0);
-    }
+    //#[test]
+    //fn remove_bet() {
+    //    let mut p = PlayerStub::new();
+    //    let b1 = Bet::new_field(5);
+    //    let b2 = Bet::new_pass(5);
+    //    p.common.add_bet(b1).unwrap();
+    //    p.common.add_bet(b2).unwrap();
+    //    assert_eq!(p.common.bets.len(), 2);
+    //    p.common.remove_bet(&b1).unwrap();
+    //    assert_eq!(p.common.bets.len(), 1);
+    //    p.common.remove_bet(&b2).unwrap();
+    //    assert_eq!(p.common.bets.len(), 0);
+    //}
 
     #[test]
     fn remove_bets() {

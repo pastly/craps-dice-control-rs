@@ -64,8 +64,6 @@ impl fmt::Display for BetError {
 const FIELD_TRIP_2: bool = false;
 const FIELD_TRIP_12: bool = false;
 const FIELD_DOUB_11: bool = false;
-const BUY_PAY_UPFRONT: bool = true;
-const LAY_PAY_UPFRONT: bool = true;
 
 impl Bet {
     /// Internal constructor. Will allow you to make nonsense bets (e.g. Pass that isn't working.
@@ -260,6 +258,22 @@ impl Bet {
         }
     }
 
+    pub fn vig_amount(self) -> u32 {
+        match self.bet_type {
+            BetType::Buy => self.amount * 5 / 100,
+            BetType::Lay => match self.point.unwrap() {
+                // (1/2)*(5/100) == 5/200 == 1/40
+                4 | 10 => self.amount / 40,
+                // (2/3)*(5/100) == 10/300 == 1/30
+                5 | 9 => self.amount / 30,
+                // (5/6)*(5/100) == 25/600 == 1/24
+                6 | 8 => self.amount / 24,
+                _ => panic!("Illegal point value"),
+            },
+            _ => 0,
+        }
+    }
+
     pub fn win_amount(self, r: Roll) -> Result<u32, BetError> {
         match self.bet_type {
             BetType::Pass | BetType::Come => {
@@ -329,30 +343,28 @@ impl Bet {
                 if r.value() != self.point.unwrap() {
                     return Err(BetError::DoesntWin(self, r));
                 }
-                let vig = if BUY_PAY_UPFRONT {
-                    0
-                } else {
-                    self.amount * 5 / 100
-                };
-                match self.point.unwrap() {
-                    4 | 10 => Ok(self.amount * 2 - vig),
-                    5 | 9 => Ok(self.amount * 3 / 2 - vig),
-                    6 | 8 => Ok(self.amount * 6 / 5 - vig),
+                // If vig needs to be paid, do so by subtracting it yourself:
+                //     bet.win_amount() - bet.vig_amount()
+                Ok(match self.point.unwrap() {
+                    4 | 10 => self.amount * 2,
+                    5 | 9 => self.amount * 3 / 2,
+                    6 | 8 => self.amount * 6 / 5,
                     _ => panic!("Illegal point value"),
-                }
+                })
             }
             BetType::Lay => {
                 assert!(self.point.is_some());
                 if r.value() != 7 {
                     return Err(BetError::DoesntWin(self, r));
                 }
-                let win = match self.point.unwrap() {
+                // If vig needs to be paid, do so by subtracting it yourself:
+                //     bet.win_amount() - bet.vig_amount()
+                Ok(match self.point.unwrap() {
                     4 | 10 => self.amount / 2,
                     5 | 9 => self.amount * 2 / 3,
                     6 | 8 => self.amount * 5 / 6,
                     _ => panic!("Illegal point value"),
-                };
-                Ok(win - if LAY_PAY_UPFRONT { 0 } else { win * 5 / 100 })
+                })
             }
         }
     }
@@ -590,8 +602,79 @@ mod tests {
     }
 
     #[test]
+    fn vig_amount() {
+        for bet_type in BetTypeIter::new() {
+            let easy_amount = 500;
+            match bet_type {
+                BetType::Buy => {
+                    for amt in [25, 50, 100, 500, 40, 48].iter() {
+                        for point in [4, 5, 6, 8, 9, 10].iter() {
+                            let b = Bet::new_buy(*amt, *point);
+                            let vig = *amt * 5 / 100;
+                            assert_eq!(b.vig_amount(), vig);
+                        }
+                    }
+                }
+                BetType::Lay => {
+                    for amt in [25, 50, 100, 500, 40, 48].iter() {
+                        for point in [4, 5, 6, 8, 9, 10].iter() {
+                            let b = Bet::new_lay(*amt, *point);
+                            let vig = match *point {
+                                4 | 10 => *amt * 1 / 2 * 5 / 100,
+                                5 | 9 => *amt * 2 / 3 * 5 / 100,
+                                6 | 8 => *amt * 5 / 6 * 5 / 100,
+                                _ => panic!(),
+                            };
+                            assert_eq!(b.vig_amount(), vig);
+                        }
+                    }
+                }
+                BetType::Pass => {
+                    let b = Bet::new_pass(easy_amount);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::Come => {
+                    let b = Bet::new_come(easy_amount);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::DontPass => {
+                    let b = Bet::new_dontpass(easy_amount);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::DontCome => {
+                    let b = Bet::new_dontcome(easy_amount);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::PassOdds => {
+                    let b = Bet::new_passodds(easy_amount, 4);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::ComeOdds => {
+                    let b = Bet::new_comeodds(easy_amount, 4);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::DontPassOdds => {
+                    let b = Bet::new_dontpassodds(easy_amount, 4);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::DontComeOdds => {
+                    let b = Bet::new_dontcomeodds(easy_amount, 4);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::Field => {
+                    let b = Bet::new_field(easy_amount);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+                BetType::Place => {
+                    let b = Bet::new_place(easy_amount, 4);
+                    assert_eq!(b.vig_amount(), 0);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn win_amount() {
-        use super::{BUY_PAY_UPFRONT, LAY_PAY_UPFRONT};
         for bet_type in BetTypeIter::new() {
             match bet_type {
                 BetType::Pass | BetType::Come => {
@@ -708,9 +791,9 @@ mod tests {
                     ]
                     .iter()
                     {
+                        // vig is determined with vig_amount() and should be removed by caller.
+                        // Thus it is correct to calculate pre-vig amounts
                         let amt = 500;
-                        // TODO only tests one case in yes/no buy vig is paid up front
-                        let vig = if BUY_PAY_UPFRONT { 0 } else { amt * 5 / 100 };
                         let b = Bet::new_buy(amt, roll.value());
                         let win = match roll.value() {
                             4 | 10 => amt * 2,
@@ -718,13 +801,14 @@ mod tests {
                             6 | 8 => amt * 6 / 5,
                             _ => panic!(),
                         };
-                        assert_eq!(b.win_amount(*roll), Ok(win - vig));
+                        assert_eq!(b.win_amount(*roll), Ok(win));
                     }
                 }
                 BetType::Lay => {
                     for point in [4, 5, 6, 8, 9, 10].iter() {
+                        // vig is determined with vig_amount() and should be removed by caller.
+                        // Thus it is correct to calculate pre-vig amounts
                         let amt = 500;
-                        // TODO only tests one case in yes/no lay vig is paid up front
                         let b = Bet::new_lay(amt, *point);
                         let win = match *point {
                             4 | 10 => amt / 2,
@@ -732,8 +816,7 @@ mod tests {
                             6 | 8 => amt * 5 / 6,
                             _ => panic!(),
                         };
-                        let vig = if LAY_PAY_UPFRONT { 0 } else { win * 5 / 100 };
-                        assert_eq!(b.win_amount(Roll::new([3, 4]).unwrap()), Ok(win - vig));
+                        assert_eq!(b.win_amount(Roll::new([3, 4]).unwrap()), Ok(win));
                     }
                 }
             }
