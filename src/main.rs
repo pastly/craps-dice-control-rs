@@ -12,7 +12,7 @@ use rayon::prelude::*;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
-use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::io::{BufReader, BufRead, BufWriter, Read, Seek, SeekFrom, Write};
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread;
 
@@ -243,92 +243,139 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
 }
 
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
-    let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
-    let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
-    let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
-    let out_rolls = args.value_of("outrolls");
-    let out_bankroll = args.value_of("outbankroll");
-    // return early if no output requested
-    if out_rolls.is_none() && out_bankroll.is_none() {
-        eprintln!("No output requested. Nothing to do.");
-        return Err(());
+    let in_fname = args.value_of("input").unwrap();
+    let out_fname = args.value_of("output").unwrap();
+    // Try to open output file, return early if can't, otherwise wrap in a BufWriter
+    let mut in_fd = match OpenOptions::new()
+        .read(true)
+        .open(in_fname)
+    {
+        Ok(fd) => BufReader::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for input: {}", in_fname, e);
+            return Err(());
+        }
+    };
+    // Try to open output file, return early if can't, otherwise wrap in a BufWriter
+    let mut out_fd = match OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .create(true)
+        .open(out_fname)
+    {
+        Ok(fd) => BufWriter::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for output: {}", out_fname, e);
+            return Err(());
+        }
+    };
+    for line in in_fd.lines() {
+        let line = match line {
+            Err(e) => {
+                eprintln!("Error reading line from {}: {}", in_fname, e);
+                return Err(());
+            }
+            Ok(l) => l
+        };
+        let rolls: Vec<Roll> = match serde_json::from_str(&line) {
+            Err(e) => {
+                eprintln!("Error parsing line into rolls: {}", e);
+                return Err(());
+            }
+            Ok(r) => r
+        };
+        println!("{:?}", rolls);
     }
-    // open each output rquested
-    let rolls_fd = if let Some(fname) = out_rolls {
-        Some(BufWriter::new(
-            OpenOptions::new()
-                .truncate(true)
-                .write(true)
-                .create(true)
-                .open(fname)
-                .unwrap(),
-        ))
-    } else {
-        None
-    };
-    let bank_fd = if let Some(fname) = out_bankroll {
-        Some(BufWriter::new(
-            OpenOptions::new()
-                .truncate(true)
-                .write(true)
-                .create(true)
-                .open(fname)
-                .unwrap(),
-        ))
-    } else {
-        None
-    };
-    let results = (0..num_games)
-        .into_par_iter()
-        .map(|_| {
-            let roll_gen = match get_roll_gen(args) {
-                Ok(rg) => rg,
-                Err(_) => return Err(()),
-            };
-            let mut table = Table::new(roll_gen);
-            //let mut p = FieldMartingalePlayer::new(bank, 3000);
-            let mut p = DGELay410MartingalePlayer::new(bank);
-            p.attach_recorder(Box::new(RollRecorder::new()));
-            p.attach_recorder(Box::new(BankrollRecorder::new()));
-            table.add_player(Box::new(p));
-            for _ in 0..num_rolls {
-                let finished_players = table.loop_once();
-                if !finished_players.is_empty() {
-                    assert_eq!(finished_players.len(), 1);
-                    return Ok(finished_players[0].recorder_output());
-                }
-            }
-            let finished_players = table.done();
-            assert_eq!(finished_players.len(), 1);
-            Ok(finished_players[0].recorder_output())
-        })
-        // ignore errors
-        .filter_map(|o| o.ok());
-    let (snd, rcv): (_, Receiver<HashMap<&'static str, Value>>) = sync_channel(1);
-    let handle = thread::spawn(move || {
-        let mut label_fds = [
-            (ROLL_RECORDER_LABEL, rolls_fd),
-            (BANKROLL_RECORDER_LABEL, bank_fd),
-        ];
-        for output in rcv.iter() {
-            for (label, fd) in label_fds.iter_mut() {
-                if let Some(fd) = fd {
-                    writeln!(fd, "{}", output[label]).unwrap();
-                }
-            }
-        }
-        for (label, fd) in label_fds.iter_mut() {
-            if let Some(fd) = fd {
-                fd.flush().unwrap();
-            }
-        }
-    });
-    results.for_each_with(snd, |s, output| {
-        s.send(output).unwrap();
-    });
-    handle.join().unwrap();
     Ok(())
 }
+
+//fn simulate(args: &ArgMatches) -> Result<(), ()> {
+//    let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
+//    let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
+//    let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
+//    let out_rolls = args.value_of("outrolls");
+//    let out_bankroll = args.value_of("outbankroll");
+//    // return early if no output requested
+//    if out_rolls.is_none() && out_bankroll.is_none() {
+//        eprintln!("No output requested. Nothing to do.");
+//        return Err(());
+//    }
+//    // open each output rquested
+//    let rolls_fd = if let Some(fname) = out_rolls {
+//        Some(BufWriter::new(
+//            OpenOptions::new()
+//                .truncate(true)
+//                .write(true)
+//                .create(true)
+//                .open(fname)
+//                .unwrap(),
+//        ))
+//    } else {
+//        None
+//    };
+//    let bank_fd = if let Some(fname) = out_bankroll {
+//        Some(BufWriter::new(
+//            OpenOptions::new()
+//                .truncate(true)
+//                .write(true)
+//                .create(true)
+//                .open(fname)
+//                .unwrap(),
+//        ))
+//    } else {
+//        None
+//    };
+//    let results = (0..num_games)
+//        .into_par_iter()
+//        .map(|_| {
+//            let roll_gen = match get_roll_gen(args) {
+//                Ok(rg) => rg,
+//                Err(_) => return Err(()),
+//            };
+//            let mut table = Table::new(roll_gen);
+//            //let mut p = FieldMartingalePlayer::new(bank, 3000);
+//            let mut p = DGELay410MartingalePlayer::new(bank);
+//            p.attach_recorder(Box::new(RollRecorder::new()));
+//            p.attach_recorder(Box::new(BankrollRecorder::new()));
+//            table.add_player(Box::new(p));
+//            for _ in 0..num_rolls {
+//                let finished_players = table.loop_once();
+//                if !finished_players.is_empty() {
+//                    assert_eq!(finished_players.len(), 1);
+//                    return Ok(finished_players[0].recorder_output());
+//                }
+//            }
+//            let finished_players = table.done();
+//            assert_eq!(finished_players.len(), 1);
+//            Ok(finished_players[0].recorder_output())
+//        })
+//        // ignore errors
+//        .filter_map(|o| o.ok());
+//    let (snd, rcv): (_, Receiver<HashMap<&'static str, Value>>) = sync_channel(1);
+//    let handle = thread::spawn(move || {
+//        let mut label_fds = [
+//            (ROLL_RECORDER_LABEL, rolls_fd),
+//            (BANKROLL_RECORDER_LABEL, bank_fd),
+//        ];
+//        for output in rcv.iter() {
+//            for (label, fd) in label_fds.iter_mut() {
+//                if let Some(fd) = fd {
+//                    writeln!(fd, "{}", output[label]).unwrap();
+//                }
+//            }
+//        }
+//        for (label, fd) in label_fds.iter_mut() {
+//            if let Some(fd) = fd {
+//                fd.flush().unwrap();
+//            }
+//        }
+//    });
+//    results.for_each_with(snd, |s, output| {
+//        s.send(output).unwrap();
+//    });
+//    handle.join().unwrap();
+//    Ok(())
+//}
 
 fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
     // unwrap ok: clap should have complained
@@ -387,31 +434,18 @@ fn main() {
         )
         .subcommand(
             SubCommand::with_name("simulate")
-                .about("Run craps game simulations")
+                .about("Run craps game sims with the given rolls and a strategy; output bankroll")
                 .arg(
-                    Arg::with_name("outrolls")
-                        .long("out-rolls")
-                        .value_name("FILE")
-                        .help("If specified, write recorded rolls to this file"),
+                    Arg::with_name("input")
+                        .short("i")
+                        .long("input")
+                        .default_value("/dev/stdin"),
                 )
                 .arg(
-                    Arg::with_name("outbankroll")
-                        .long("out-bankroll")
-                        .value_name("FILE")
-                        .help("If specified, write recorded bankroll to this file"),
-                )
-                .arg(
-                    Arg::with_name("bankroll")
-                        .long("starting-bankroll")
-                        .value_name("AMT")
-                        .default_value(conf_def::STARTING_BANKROLL)
-                        .validator(|v| validate_as!(u32, v))
-                        .help("Amount of money to start with"),
-                )
-                .arg(
-                    Arg::with_name("inmemory")
-                        .long("in-memory")
-                        .help("Store intermediate results in-memory instead of on disk"),
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .default_value("/dev/stdout"),
                 ),
         )
         .subcommand(
