@@ -189,6 +189,7 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
     let fname = args.value_of("output").unwrap();
+    // Try to open output file, return early if can't, otherwise wrap in a BufWriter
     let mut fd = match OpenOptions::new()
         .truncate(true)
         .write(true)
@@ -201,27 +202,42 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
             return Err(());
         }
     };
-    let (snd, rcv): (SyncSender<Value>, _) = sync_channel(1);
+    // Create a communication channel to send results over. The rayon thread pool will do all the
+    // work: generating rolls, collecting into a Vec<Roll>, and using serde to parse that into json
+    // and the raw bytes of that json string. All the sender has to do is take the bytes
+    // representing the json string of Vec<Roll> and write it out.
+    let (snd, rcv): (SyncSender<Vec<u8>>, _) = sync_channel(1);
+    // spawn the thread that writes each json string to its own line
     let handle = thread::spawn(move || {
         for rolls in rcv.iter() {
-            writeln!(fd, "{}", rolls).unwrap();
+            fd.write(&rolls[..]).unwrap();
+            fd.write(&[0x0a]).unwrap();
         }
         fd.flush().unwrap();
     });
+    // the hard work. generate num_game games ...
     (0..num_games)
         .into_par_iter()
+        // for each game, create a roll generator and use it to generate num_rolls rolls.
         .map_init(
             || get_roll_gen(args).unwrap(),
             |roll_gen, _| {
-                json!((0..num_rolls)
-                    .into_iter()
-                    .map(|_| roll_gen.gen())
-                    .collect::<Vec<Roll>>())
+                // generates the rolls into a Vec, parses it as json and returns the bytes
+                // representing the json string.
+                serde_json::to_vec(
+                    &(0..num_rolls)
+                        .into_iter()
+                        .map(|_| roll_gen.gen())
+                        .collect::<Vec<Roll>>(),
+                )
+                .unwrap()
             },
         )
+        // finally send off the bytes representing each json string to the write thread
         .for_each_with(snd, |s, game| {
             s.send(game).unwrap();
         });
+    // make sure the write thread finishes
     handle.join().unwrap();
     Ok(())
 }
