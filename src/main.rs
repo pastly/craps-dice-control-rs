@@ -4,15 +4,16 @@ use cdc2::player::{
     BankrollRecorder, Player, RollRecorder, BANKROLL_RECORDER_LABEL, ROLL_RECORDER_LABEL,
 };
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
+use cdc2::roll::Roll;
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
-use std::sync::mpsc::{sync_channel, Receiver};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 use std::thread;
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
@@ -184,6 +185,47 @@ fn u8_to_u32(v: &mut [u8]) -> &[u32] {
     body
 }
 
+fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
+    let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
+    let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
+    let fname = args.value_of("output").unwrap();
+    let mut fd = match OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .create(true)
+        .open(fname)
+    {
+        Ok(fd) => BufWriter::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for output: {}", fname, e);
+            return Err(());
+        }
+    };
+    let (snd, rcv): (SyncSender<Value>, _) = sync_channel(1);
+    let handle = thread::spawn(move || {
+        for rolls in rcv.iter() {
+            writeln!(fd, "{}", rolls).unwrap();
+        }
+        fd.flush().unwrap();
+    });
+    (0..num_games)
+        .into_par_iter()
+        .map_init(
+            || get_roll_gen(args).unwrap(),
+            |roll_gen, _| {
+                json!((0..num_rolls)
+                    .into_iter()
+                    .map(|_| roll_gen.gen())
+                    .collect::<Vec<Roll>>())
+            },
+        )
+        .for_each_with(snd, |s, game| {
+            s.send(game).unwrap();
+        });
+    handle.join().unwrap();
+    Ok(())
+}
+
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
@@ -331,17 +373,6 @@ fn main() {
             SubCommand::with_name("simulate")
                 .about("Run craps game simulations")
                 .arg(
-                    Arg::with_name("dieweights")
-                        .long("die-weights")
-                        .value_name("FILE"),
-                )
-                .arg(
-                    Arg::with_name("rollweights")
-                        .long("roll-weights")
-                        .value_name("FILE"),
-                )
-                .group(ArgGroup::with_name("infmt").args(&["dieweights", "rollweights"]))
-                .arg(
                     Arg::with_name("outrolls")
                         .long("out-rolls")
                         .value_name("FILE")
@@ -362,25 +393,46 @@ fn main() {
                         .help("Amount of money to start with"),
                 )
                 .arg(
+                    Arg::with_name("inmemory")
+                        .long("in-memory")
+                        .help("Store intermediate results in-memory instead of on disk"),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("genrolls")
+                .about("Using the given weights, generate X games of Y rolls each")
+                .arg(
+                    Arg::with_name("dieweights")
+                        .long("die-weights")
+                        .value_name("FILE"),
+                )
+                .arg(
+                    Arg::with_name("rollweights")
+                        .long("roll-weights")
+                        .value_name("FILE"),
+                )
+                .group(ArgGroup::with_name("infmt").args(&["dieweights", "rollweights"]))
+                .arg(
                     Arg::with_name("numrolls")
                         .long("num-rolls")
-                        .value_name("N")
+                        .value_name("Y")
                         .default_value(conf_def::NUM_ROLLS)
                         .validator(|v| validate_as!(u32, v))
-                        .help("Maximum game length"),
+                        .help("Num rolls in each game"),
                 )
                 .arg(
                     Arg::with_name("numgames")
                         .long("num-games")
-                        .value_name("N")
+                        .value_name("X")
                         .default_value(conf_def::NUM_GAMES)
                         .validator(|v| validate_as!(u32, v))
-                        .help("How many games to simulate"),
+                        .help("How many games to generate"),
                 )
                 .arg(
-                    Arg::with_name("inmemory")
-                        .long("in-memory")
-                        .help("Store intermediate results in-memory instead of on disk"),
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .default_value("/dev/stdout"),
                 ),
         )
         .subcommand(
@@ -412,6 +464,8 @@ fn main() {
         simulate(args)
     } else if let Some(args) = args.subcommand_matches("parserolls") {
         parse_rolls(args)
+    } else if let Some(args) = args.subcommand_matches("genrolls") {
+        gen_rolls(args)
     } else if args.subcommand_name().is_none() {
         eprintln!("Must provide subcommand");
         Err(())
