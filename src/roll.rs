@@ -1,4 +1,4 @@
-use serde::ser::{Serialize, SerializeTuple, Serializer};
+use serde::{Serialize, Deserialize};
 use std::error::Error;
 use std::fmt;
 
@@ -16,10 +16,8 @@ impl fmt::Display for RollError {
     }
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
-pub struct Roll {
-    dice: [u8; 2],
-}
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Debug)]
+pub struct Roll([u8; 2]);
 
 impl Roll {
     pub fn new(dice: [u8; 2]) -> Result<Self, RollError> {
@@ -28,37 +26,26 @@ impl Roll {
         } else if dice[1] < 1 || dice[1] > 6 {
             Err(RollError::OutOfRange(dice[1]))
         } else {
-            Ok(Roll { dice })
+            Ok(Self { 0: dice })
         }
     }
 
     pub fn value(self) -> u8 {
-        self.dice[0] + self.dice[1]
+        self.0[0] + self.0[1]
     }
 
     pub fn dice(&self) -> &[u8; 2] {
-        &self.dice
+        &self.0
     }
 
     pub fn is_hard(self) -> bool {
-        self.dice[0] != 1 && self.dice[0] != 6 && self.dice[0] == self.dice[1]
+        self.0[0] != 1 && self.0[0] != 6 && self.0[0] == self.0[1]
     }
 }
 
-impl Serialize for Roll {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut tup = serializer.serialize_tuple(2)?;
-        tup.serialize_element(&self.dice[0])?;
-        tup.serialize_element(&self.dice[1])?;
-        tup.end()
-    }
-}
 impl fmt::Display for Roll {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        write!(f, "Roll<{}, {}>", self.dice[0], self.dice[1])
+        write!(f, "Roll<{}, {}>", self.0[0], self.0[1])
     }
 }
 
@@ -83,8 +70,8 @@ mod tests {
             let r = Roll::new([d1, d2]);
             assert!(r.is_ok());
             let r = r.unwrap();
-            assert_eq!(r.dice[0], d1);
-            assert_eq!(r.dice[1], d2);
+            assert_eq!(r.0[0], d1);
+            assert_eq!(r.0[1], d2);
         }
     }
 
