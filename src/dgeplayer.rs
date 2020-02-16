@@ -2,6 +2,7 @@ use crate::bet::{Bet, BetType};
 use crate::player::*;
 use crate::table::TableState;
 use serde_json::Value;
+use std::collections::HashMap;
 
 // https://youtu.be/BG8EyJTRO_U?t=150
 // When 0, 1, 2, or 3 4s have been seen since the last 7, bet nothing.

@@ -1,16 +1,19 @@
 use cdc2::dgeplayer::DGELay410MartingalePlayer;
 use cdc2::global::conf_def;
-use cdc2::player::{BankrollRecorder, Player, RollRecorder};
+use cdc2::player::{
+    BankrollRecorder, Player, RollRecorder, BANKROLL_RECORDER_LABEL, ROLL_RECORDER_LABEL,
+};
 use cdc2::randroll::{DieWeights, RollGen, RollWeights};
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
-use serde_json::json;
+use serde_json::{json, Value};
 use std::fs::OpenOptions;
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 use std::sync::mpsc::{sync_channel, Receiver};
 use std::thread::{self, JoinHandle};
+use std::collections::HashMap;
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -199,11 +202,42 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
     let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
-    let outfmt = parse_as!(SimulateOutFmt, args.value_of("outfmt").unwrap());
+    let out_rolls = args.value_of("outrolls");
+    let out_bankroll = args.value_of("outbankroll");
+    // return early if no output requested
+    if out_rolls.is_none() && out_bankroll.is_none() {
+        eprintln!("No output requested. Nothing to do.");
+        return Err(());
+    }
+    // open each output rquested
+    let rolls_fd = if let Some(fname) = out_rolls {
+        Some(
+            OpenOptions::new()
+                .truncate(true)
+                .write(true)
+                .create(true)
+                .open(fname)
+                .unwrap(),
+        )
+    } else {
+        None
+    };
+    let bank_fd = if let Some(fname) = out_bankroll {
+        Some(
+            OpenOptions::new()
+                .truncate(true)
+                .write(true)
+                .create(true)
+                .open(fname)
+                .unwrap(),
+        )
+    } else {
+        None
+    };
     let in_mem = args.is_present("inmemory");
     let results = (0..num_games)
         .into_par_iter()
-        .map(|game_idx| {
+        .map(|_| {
             let roll_gen = match get_roll_gen(args) {
                 Ok(rg) => rg,
                 Err(_) => return Err(()),
@@ -218,60 +252,34 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
                 let finished_players = table.loop_once();
                 if !finished_players.is_empty() {
                     assert_eq!(finished_players.len(), 1);
-                    return Ok((game_idx, finished_players[0].recorder_output()));
+                    return Ok(finished_players[0].recorder_output());
                 }
             }
             let finished_players = table.done();
             assert_eq!(finished_players.len(), 1);
-            Ok((game_idx, finished_players[0].recorder_output()))
+            Ok(finished_players[0].recorder_output())
         })
         // ignore errors
         .filter_map(|o| o.ok());
-    match outfmt {
-        SimulateOutFmt::Rolls => {
-            results.for_each(|(_, o)| println!("{}", json!(o)));
+    let (snd, rcv): (_, Receiver<HashMap<&'static str, Value>>) = sync_channel(10);
+    let handle = thread::spawn(move || {
+        for mut output in rcv.iter() {
+            for (label, fd) in [
+                (ROLL_RECORDER_LABEL, rolls_fd.as_ref()),
+                (BANKROLL_RECORDER_LABEL, bank_fd.as_ref()),
+            ]
+            .iter_mut()
+            {
+                if let Some(fd) = fd {
+                    writeln!(fd, "{}", output[label]).unwrap();
+                }
+            }
         }
-        SimulateOutFmt::BankrollVsTime => {
-            results.for_each(|(_, o)| println!("{}", json!(o)));
-        }
-        SimulateOutFmt::BankrollVsTimeMedrange => {
-            let int_size = 4;
-            let file_len = int_size * num_rolls as usize * num_games as usize;
-            let (sender, receiver): (_, Receiver<Vec<u32>>) = sync_channel(1);
-            if in_mem {
-                let mut buf = Cursor::new(vec![0u8; file_len]);
-                let handle = spawn_recv_thread(receiver, buf);
-                results.for_each_with(sender, |s, (_, game)| {
-                    let game: Vec<u32> = serde_json::from_value(game).unwrap();
-                    s.send(game).unwrap();
-                });
-                buf = handle.join().unwrap();
-                let iter = BankrollMedrangeIter::new(num_games, num_rolls, int_size, buf);
-                iter.par_bridge().for_each(|item| {
-                    println!("{}", json!(item));
-                });
-            } else {
-                let file_name = "mmap.bin";
-                let mut file = OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .read(true)
-                    .open(file_name)
-                    .unwrap();
-                file.set_len(file_len as u64).unwrap();
-                let handle = spawn_recv_thread(receiver, file);
-                results.for_each_with(sender, |s, (_, game)| {
-                    let game: Vec<u32> = serde_json::from_value(game).unwrap();
-                    s.send(game).unwrap();
-                });
-                file = handle.join().unwrap();
-                let iter = BankrollMedrangeIter::new(num_games, num_rolls, int_size, file);
-                iter.par_bridge().for_each(|item| {
-                    println!("{}", json!(item));
-                });
-            };
-        }
-    };
+    });
+    results.for_each_with(snd, |s, output| {
+        s.send(output).unwrap();
+    });
+    handle.join().unwrap();
     Ok(())
 }
 
@@ -345,11 +353,16 @@ fn main() {
                 )
                 .group(ArgGroup::with_name("infmt").args(&["dieweights", "rollweights"]))
                 .arg(
-                    Arg::with_name("outfmt")
-                        .long("outfmt")
-                        .possible_values(&SimulateOutFmt::variants())
-                        .default_value("BankrollVsTime")
-                        .case_insensitive(true),
+                    Arg::with_name("outrolls")
+                        .long("out-rolls")
+                        .value_name("FILE")
+                        .help("If specified, write recorded rolls to this file"),
+                )
+                .arg(
+                    Arg::with_name("outbankroll")
+                        .long("out-bankroll")
+                        .value_name("FILE")
+                        .help("If specified, write recorded bankroll to this file"),
                 )
                 .arg(
                     Arg::with_name("bankroll")

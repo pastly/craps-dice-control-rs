@@ -8,8 +8,8 @@ use std::fmt;
 
 pub(crate) const BUY_PAY_UPFRONT: bool = true;
 pub(crate) const LAY_PAY_UPFRONT: bool = true;
-const BANKROLL_RECORDER_LABEL: &str = "bankroll";
-const ROLL_RECORDER_LABEL: &str = "rolls";
+pub const BANKROLL_RECORDER_LABEL: &str = "bankroll";
+pub const ROLL_RECORDER_LABEL: &str = "rolls";
 
 pub trait Player {
     fn make_bets(&mut self, state: &TableState) -> Result<(), PlayerError>;
@@ -17,7 +17,7 @@ pub trait Player {
     fn done(&mut self);
     fn record_activity(&mut self, state: &TableState);
     fn attach_recorder(&mut self, r: Box<dyn PlayerRecorder>);
-    fn recorder_output(&self) -> Value;
+    fn recorder_output(&self) -> HashMap<&'static str, Value>;
 }
 
 pub trait PlayerRecorder {
@@ -157,6 +157,9 @@ impl PlayerCommon {
             // Turn Vec<Result<_>, Err> into Result<Vec<_>, Err> and return early if that Err
             // exists
             .collect::<Result<Vec<Bet>, _>>()?;
+        if to_remove.is_empty() {
+            return Ok(None);
+        }
         // there should only ever be one bet of a given (type, point) pair
         assert_eq!(to_remove.len(), 1);
         let to_remove = to_remove[0];
@@ -279,12 +282,12 @@ impl PlayerCommon {
         self.recorders.push(r);
     }
 
-    pub(crate) fn recorder_output(&self) -> Value {
+    pub(crate) fn recorder_output(&self) -> HashMap<&'static str, Value> {
         let mut ret = HashMap::new();
         for r in self.recorders.iter() {
             ret.insert(r.label(), r.read_output());
         }
-        json!(ret)
+        ret
     }
 }
 
@@ -330,7 +333,7 @@ macro_rules! impl_playercommon_passthrough_for_player {
             self.common.attach_recorder(r)
         }
 
-        fn recorder_output(&self) -> Value {
+        fn recorder_output(&self) -> HashMap<&'static str, Value> {
             self.common.recorder_output()
         }
     };
