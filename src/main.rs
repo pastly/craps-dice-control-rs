@@ -8,12 +8,12 @@ use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
-use serde_json::{json, Value};
-use std::fs::OpenOptions;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
-use std::sync::mpsc::{sync_channel, Receiver};
-use std::thread::{self, JoinHandle};
+use serde_json::Value;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
+use std::sync::mpsc::{sync_channel, Receiver};
+use std::thread;
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
 /// Return Ok(()) if yes, else Err(string_describing_the_problem)
@@ -184,20 +184,6 @@ fn u8_to_u32(v: &mut [u8]) -> &[u32] {
     body
 }
 
-fn spawn_recv_thread<W: 'static + Write + Send>(
-    receiver: Receiver<Vec<u32>>,
-    mut buf: W,
-) -> JoinHandle<W> {
-    thread::spawn(move || {
-        for mut game in receiver.iter() {
-            let v = u32_to_u8(&mut game);
-            buf.write_all(v).unwrap();
-        }
-        buf.flush().unwrap();
-        buf
-    })
-}
-
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
@@ -211,30 +197,29 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     }
     // open each output rquested
     let rolls_fd = if let Some(fname) = out_rolls {
-        Some(
+        Some(BufWriter::new(
             OpenOptions::new()
                 .truncate(true)
                 .write(true)
                 .create(true)
                 .open(fname)
                 .unwrap(),
-        )
+        ))
     } else {
         None
     };
     let bank_fd = if let Some(fname) = out_bankroll {
-        Some(
+        Some(BufWriter::new(
             OpenOptions::new()
                 .truncate(true)
                 .write(true)
                 .create(true)
                 .open(fname)
                 .unwrap(),
-        )
+        ))
     } else {
         None
     };
-    let in_mem = args.is_present("inmemory");
     let results = (0..num_games)
         .into_par_iter()
         .map(|_| {
@@ -261,18 +246,22 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
         })
         // ignore errors
         .filter_map(|o| o.ok());
-    let (snd, rcv): (_, Receiver<HashMap<&'static str, Value>>) = sync_channel(10);
+    let (snd, rcv): (_, Receiver<HashMap<&'static str, Value>>) = sync_channel(1);
     let handle = thread::spawn(move || {
-        for mut output in rcv.iter() {
-            for (label, fd) in [
-                (ROLL_RECORDER_LABEL, rolls_fd.as_ref()),
-                (BANKROLL_RECORDER_LABEL, bank_fd.as_ref()),
-            ]
-            .iter_mut()
-            {
+        let mut label_fds = [
+            (ROLL_RECORDER_LABEL, rolls_fd),
+            (BANKROLL_RECORDER_LABEL, bank_fd),
+        ];
+        for output in rcv.iter() {
+            for (label, fd) in label_fds.iter_mut() {
                 if let Some(fd) = fd {
                     writeln!(fd, "{}", output[label]).unwrap();
                 }
+            }
+        }
+        for (label, fd) in label_fds.iter_mut() {
+            if let Some(fd) = fd {
+                fd.flush().unwrap();
             }
         }
     });
