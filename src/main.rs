@@ -213,13 +213,8 @@ fn medrange(args: &ArgMatches) -> Result<(), ()> {
     let num_rolls = first.len();
     let mut buf = vec![];
     const INT_SIZE: usize = 4;
-    let mut count = 0;
     while let Some(Ok(line)) = lines.next() {
-        count += 1;
         let mut data: Vec<u32> = serde_json::from_str(&line).unwrap();
-        if data.len() != num_rolls {
-            eprintln!("{} line problem", count);
-        }
         assert_eq!(data.len(), num_rolls);
         let bytes = u32_to_u8(&mut data);
         buf.write_all(bytes).unwrap();
