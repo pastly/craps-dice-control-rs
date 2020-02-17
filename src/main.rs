@@ -1,19 +1,15 @@
 use cdc2::dgeplayer::DGELay410MartingalePlayer;
 use cdc2::global::conf_def;
-use cdc2::player::{
-    BankrollRecorder, Player, RollRecorder, BANKROLL_RECORDER_LABEL, ROLL_RECORDER_LABEL,
-};
-use cdc2::randroll::{DieWeights, RollGen, RollWeights, GivenRolls};
+use cdc2::player::{BankrollRecorder, Player, BANKROLL_RECORDER_LABEL};
+use cdc2::randroll::{DieWeights, GivenRolls, RollGen, RollWeights};
 use cdc2::roll::Roll;
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
 use rayon::prelude::*;
-use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::fs::OpenOptions;
-use std::io::{BufReader, BufRead, BufWriter, Read, Seek, SeekFrom, Write};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::io::{BufRead, BufReader, BufWriter, Cursor, Read, Seek, SeekFrom, Write};
+use std::sync::mpsc::{sync_channel, SyncSender};
 use std::thread;
 
 /// Validates the given expression can be parsed as the given type following clap's convention:
@@ -185,6 +181,72 @@ fn u8_to_u32(v: &mut [u8]) -> &[u32] {
     body
 }
 
+fn medrange(args: &ArgMatches) -> Result<(), ()> {
+    let in_fname = args.value_of("input").unwrap();
+    let out_fname = args.value_of("output").unwrap();
+    let in_fd = match OpenOptions::new().read(true).open(in_fname) {
+        Ok(fd) => BufReader::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for input: {}", in_fname, e);
+            return Err(());
+        }
+    };
+    let mut out_fd = match OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .create(true)
+        .open(out_fname)
+    {
+        Ok(fd) => BufWriter::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for output: {}", out_fname, e);
+            return Err(());
+        }
+    };
+    let mut lines = in_fd.lines().peekable();
+    let first: Vec<u32> = if let Some(Ok(line)) = lines.peek() {
+        serde_json::from_str(&line).unwrap()
+    } else {
+        eprintln!("Can't even read first line of input from {}", in_fname);
+        return Err(());
+    };
+    let num_rolls = first.len();
+    let mut buf = vec![];
+    const INT_SIZE: usize = 4;
+    let mut count = 0;
+    while let Some(Ok(line)) = lines.next() {
+        count += 1;
+        let mut data: Vec<u32> = serde_json::from_str(&line).unwrap();
+        if data.len() != num_rolls {
+            eprintln!("{} line problem", count);
+        }
+        assert_eq!(data.len(), num_rolls);
+        let bytes = u32_to_u8(&mut data);
+        buf.write_all(bytes).unwrap();
+    }
+    let num_games = buf.len() / INT_SIZE / num_rolls;
+    // assert no truncated int division
+    assert_eq!(num_games * num_rolls * INT_SIZE, buf.len());
+    let iter = BankrollMedrangeIter::new(
+        num_games as u32,
+        num_rolls as u32,
+        INT_SIZE,
+        Cursor::new(buf),
+    );
+    let (snd, rcv): (SyncSender<Vec<u8>>, _) = sync_channel(1);
+    let handle = thread::spawn(move || {
+        for bytes in rcv.iter() {
+            out_fd.write_all(&bytes[..]).unwrap();
+            out_fd.write_all(&[0x0a]).unwrap();
+        }
+        out_fd.flush().unwrap();
+    });
+    iter.par_bridge()
+        .for_each_with(snd, |s, i| s.send(serde_json::to_vec(&i).unwrap()).unwrap());
+    handle.join().unwrap();
+    Ok(())
+}
+
 fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
     let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
     let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
@@ -210,8 +272,8 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
     // spawn the thread that writes each json string to its own line
     let handle = thread::spawn(move || {
         for rolls in rcv.iter() {
-            fd.write(&rolls[..]).unwrap();
-            fd.write(&[0x0a]).unwrap();
+            fd.write_all(&rolls[..]).unwrap();
+            fd.write_all(&[0x0a]).unwrap();
         }
         fd.flush().unwrap();
     });
@@ -226,7 +288,6 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
                 // representing the json string.
                 serde_json::to_vec(
                     &(0..num_rolls)
-                        .into_iter()
                         .map(|_| roll_gen.gen().unwrap())
                         .collect::<Vec<Roll>>(),
                 )
@@ -245,13 +306,9 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let in_fname = args.value_of("input").unwrap();
     let out_fname = args.value_of("output").unwrap();
-    let bank = 5000; // TODO make configurable
-    //let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
+    let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
     // Try to open output file, return early if can't, otherwise wrap in a BufWriter
-    let in_fd = match OpenOptions::new()
-        .read(true)
-        .open(in_fname)
-    {
+    let in_fd = match OpenOptions::new().read(true).open(in_fname) {
         Ok(fd) => BufReader::new(fd),
         Err(e) => {
             eprintln!("Problem opening {} for input: {}", in_fname, e);
@@ -275,52 +332,54 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
     // spawn the thread that writes each json string to its own line
     let handle = thread::spawn(move || {
         for data in rcv.iter() {
-            out_fd.write(&data[..]).unwrap();
-            out_fd.write(&[0x0a]).unwrap();
+            out_fd.write_all(&data[..]).unwrap();
+            out_fd.write_all(&[0x0a]).unwrap();
         }
         out_fd.flush().unwrap();
     });
-    let results = in_fd.lines().par_bridge().map(|line| {
-        let line = match line {
-            Err(e) => {
-                eprintln!("Error reading line from {}: {}", in_fname, e);
-                return Err(());
+    in_fd
+        .lines()
+        .par_bridge()
+        //.panic_fuse()
+        .map(|line| {
+            let line = match line {
+                Err(e) => {
+                    eprintln!("Error reading line from {}: {}", in_fname, e);
+                    return Err(());
+                }
+                Ok(l) => l,
+            };
+            let rolls: Vec<Roll> = match serde_json::from_str(&line) {
+                Err(e) => {
+                    eprintln!("Error parsing line into rolls: {}", e);
+                    return Err(());
+                }
+                Ok(r) => r,
+            };
+            let num_rolls = rolls.len();
+            let roll_gen = Box::new(GivenRolls::new(rolls));
+            let mut table = Table::new(roll_gen);
+            let mut p = DGELay410MartingalePlayer::new(bank);
+            //p.attach_recorder(Box::new(RollRecorder::new()));
+            p.attach_recorder(Box::new(BankrollRecorder::new()));
+            table.add_player(Box::new(p));
+            for _ in 0..num_rolls {
+                if let Err(e) = table.loop_once() {
+                    eprintln!("Error when looping once: {}", e);
+                    return Err(());
+                }
             }
-            Ok(l) => l
-        };
-        let rolls: Vec<Roll> = match serde_json::from_str(&line) {
-            Err(e) => {
-                eprintln!("Error parsing line into rolls: {}", e);
-                return Err(());
-            }
-            Ok(r) => r
-        };
-        let num_rolls = rolls.len();
-        let roll_gen = Box::new(GivenRolls::new(rolls));
-        let mut table = Table::new(roll_gen);
-        let mut p = DGELay410MartingalePlayer::new(bank);
-        //p.attach_recorder(Box::new(RollRecorder::new()));
-        p.attach_recorder(Box::new(BankrollRecorder::new()));
-        table.add_player(Box::new(p));
-        for _ in 0..num_rolls {
-            let finished_players = table.loop_once();
-            if !finished_players.is_empty() {
-                assert_eq!(finished_players.len(), 1);
-                let mut res = finished_players[0].recorder_output();
-                let res = res.remove(BANKROLL_RECORDER_LABEL).unwrap();
-                let res = serde_json::to_vec(&res).unwrap();
-                return Ok(res);
-            }
-        }
-        let finished_players = table.done();
-        assert_eq!(finished_players.len(), 1);
-        let mut res = finished_players[0].recorder_output();
-        let res = res.remove(BANKROLL_RECORDER_LABEL).unwrap();
-        let res = serde_json::to_vec(&res).unwrap();
-        return Ok(res);
-    }).filter_map(|r| r.ok()).for_each_with(snd, |s, r| {
-        s.send(r).unwrap();
-    });
+            let finished_players = table.done();
+            assert_eq!(finished_players.len(), 1);
+            let mut res = finished_players[0].recorder_output();
+            let res = res.remove(BANKROLL_RECORDER_LABEL).unwrap();
+            let res = serde_json::to_vec(&res).unwrap();
+            Ok(res)
+        })
+        .filter_map(|r| r.ok())
+        .for_each_with(snd, |s, r| {
+            s.send(r).unwrap();
+        });
     handle.join().unwrap();
     Ok(())
 }
@@ -381,6 +440,22 @@ fn main() {
                 .global(true),
         )
         .subcommand(
+            SubCommand::with_name("medrange")
+                .about("Take bankroll as input and convert to median range stats")
+                .arg(
+                    Arg::with_name("input")
+                        .short("i")
+                        .long("input")
+                        .default_value("/dev/stdin"),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .default_value("/dev/stdout"),
+                ),
+        )
+        .subcommand(
             SubCommand::with_name("simulate")
                 .about("Run craps game sims with the given rolls and a strategy; output bankroll")
                 .arg(
@@ -394,7 +469,14 @@ fn main() {
                         .short("o")
                         .long("output")
                         .default_value("/dev/stdout"),
-                ),
+                )
+                .arg(
+                    Arg::with_name("bankroll")
+                    .long("bankroll")
+                    .default_value(conf_def::STARTING_BANKROLL)
+                    .validator(|v| validate_as!(u32, v))
+                    .help("Starting bankroll")
+                    ),
         )
         .subcommand(
             SubCommand::with_name("genrolls")
@@ -464,6 +546,8 @@ fn main() {
         parse_rolls(args)
     } else if let Some(args) = args.subcommand_matches("genrolls") {
         gen_rolls(args)
+    } else if let Some(args) = args.subcommand_matches("medrange") {
+        medrange(args)
     } else if args.subcommand_name().is_none() {
         eprintln!("Must provide subcommand");
         Err(())

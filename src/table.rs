@@ -1,5 +1,5 @@
 use crate::global::POINTS;
-use crate::player::Player;
+use crate::player::{Player, PlayerError};
 use crate::randroll::RollGen;
 use crate::roll::Roll;
 use std::default::Default;
@@ -31,44 +31,21 @@ impl Table {
         self.players.push(p);
     }
 
-    pub fn loop_once(&mut self) -> Vec<Box<dyn Player>> {
-        if self.players.is_empty() {
-            return vec![];
-        }
-        let finished = self.pre_roll();
+    pub fn loop_once(&mut self) -> Result<(), PlayerError> {
+        assert!(self.players.len() > 0);
+        self.pre_roll()?;
         self.roll();
         self.post_roll();
         //eprintln!("------");
-        finished
+        Ok(())
     }
 
-    fn pre_roll(&mut self) -> Vec<Box<dyn Player>> {
-        // Extra complex just because this was the first way I could figure out how to iterate over
-        // all the players and optionally remove them while doing so.
-        // Oh and then I went back and decided I wanted to also return players that are newly
-        // finished.
-        let mut finished = vec![];
-        self.players = {
-            // accumulate players to keep. Will return out of this code block at the end
-            let mut keep = vec![];
-            // Take each player out of the existing self.players
-            for mut p in self.players.drain(0..) {
-                // Do useful work here
-                let res = p.make_bets(&self.state);
-                p.record_activity(&self.state);
-                // If we want to remove it, tell the player it is done and neglect to add it to the
-                // keep vector
-                if let Err(_e) = res {
-                    //eprintln!("Considering player finished because {}", e);
-                    p.done();
-                    finished.push(p);
-                } else {
-                    keep.push(p);
-                }
-            }
-            keep
-        };
-        finished
+    fn pre_roll(&mut self) -> Result<(), PlayerError> {
+        for p in self.players.iter_mut() {
+            p.make_bets(&self.state)?;
+            p.record_activity(&self.state);
+        }
+        Ok(())
     }
 
     fn roll(&mut self) {
