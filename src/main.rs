@@ -3,7 +3,7 @@ use cdc2::global::conf_def;
 use cdc2::player::{
     BankrollRecorder, Player, RollRecorder, BANKROLL_RECORDER_LABEL, ROLL_RECORDER_LABEL,
 };
-use cdc2::randroll::{DieWeights, RollGen, RollWeights};
+use cdc2::randroll::{DieWeights, RollGen, RollWeights, GivenRolls};
 use cdc2::roll::Roll;
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
@@ -227,7 +227,7 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
                 serde_json::to_vec(
                     &(0..num_rolls)
                         .into_iter()
-                        .map(|_| roll_gen.gen())
+                        .map(|_| roll_gen.gen().unwrap())
                         .collect::<Vec<Roll>>(),
                 )
                 .unwrap()
@@ -245,8 +245,10 @@ fn gen_rolls(args: &ArgMatches) -> Result<(), ()> {
 fn simulate(args: &ArgMatches) -> Result<(), ()> {
     let in_fname = args.value_of("input").unwrap();
     let out_fname = args.value_of("output").unwrap();
+    let bank = 5000; // TODO make configurable
+    //let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
     // Try to open output file, return early if can't, otherwise wrap in a BufWriter
-    let mut in_fd = match OpenOptions::new()
+    let in_fd = match OpenOptions::new()
         .read(true)
         .open(in_fname)
     {
@@ -269,7 +271,16 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             return Err(());
         }
     };
-    for line in in_fd.lines() {
+    let (snd, rcv): (SyncSender<Vec<u8>>, _) = sync_channel(1);
+    // spawn the thread that writes each json string to its own line
+    let handle = thread::spawn(move || {
+        for data in rcv.iter() {
+            out_fd.write(&data[..]).unwrap();
+            out_fd.write(&[0x0a]).unwrap();
+        }
+        out_fd.flush().unwrap();
+    });
+    let results = in_fd.lines().par_bridge().map(|line| {
         let line = match line {
             Err(e) => {
                 eprintln!("Error reading line from {}: {}", in_fname, e);
@@ -284,98 +295,35 @@ fn simulate(args: &ArgMatches) -> Result<(), ()> {
             }
             Ok(r) => r
         };
-        println!("{:?}", rolls);
-    }
+        let num_rolls = rolls.len();
+        let roll_gen = Box::new(GivenRolls::new(rolls));
+        let mut table = Table::new(roll_gen);
+        let mut p = DGELay410MartingalePlayer::new(bank);
+        //p.attach_recorder(Box::new(RollRecorder::new()));
+        p.attach_recorder(Box::new(BankrollRecorder::new()));
+        table.add_player(Box::new(p));
+        for _ in 0..num_rolls {
+            let finished_players = table.loop_once();
+            if !finished_players.is_empty() {
+                assert_eq!(finished_players.len(), 1);
+                let mut res = finished_players[0].recorder_output();
+                let res = res.remove(BANKROLL_RECORDER_LABEL).unwrap();
+                let res = serde_json::to_vec(&res).unwrap();
+                return Ok(res);
+            }
+        }
+        let finished_players = table.done();
+        assert_eq!(finished_players.len(), 1);
+        let mut res = finished_players[0].recorder_output();
+        let res = res.remove(BANKROLL_RECORDER_LABEL).unwrap();
+        let res = serde_json::to_vec(&res).unwrap();
+        return Ok(res);
+    }).filter_map(|r| r.ok()).for_each_with(snd, |s, r| {
+        s.send(r).unwrap();
+    });
+    handle.join().unwrap();
     Ok(())
 }
-
-//fn simulate(args: &ArgMatches) -> Result<(), ()> {
-//    let num_games = parse_as!(u32, args.value_of("numgames").unwrap());
-//    let num_rolls = parse_as!(u32, args.value_of("numrolls").unwrap());
-//    let bank = parse_as!(u32, args.value_of("bankroll").unwrap());
-//    let out_rolls = args.value_of("outrolls");
-//    let out_bankroll = args.value_of("outbankroll");
-//    // return early if no output requested
-//    if out_rolls.is_none() && out_bankroll.is_none() {
-//        eprintln!("No output requested. Nothing to do.");
-//        return Err(());
-//    }
-//    // open each output rquested
-//    let rolls_fd = if let Some(fname) = out_rolls {
-//        Some(BufWriter::new(
-//            OpenOptions::new()
-//                .truncate(true)
-//                .write(true)
-//                .create(true)
-//                .open(fname)
-//                .unwrap(),
-//        ))
-//    } else {
-//        None
-//    };
-//    let bank_fd = if let Some(fname) = out_bankroll {
-//        Some(BufWriter::new(
-//            OpenOptions::new()
-//                .truncate(true)
-//                .write(true)
-//                .create(true)
-//                .open(fname)
-//                .unwrap(),
-//        ))
-//    } else {
-//        None
-//    };
-//    let results = (0..num_games)
-//        .into_par_iter()
-//        .map(|_| {
-//            let roll_gen = match get_roll_gen(args) {
-//                Ok(rg) => rg,
-//                Err(_) => return Err(()),
-//            };
-//            let mut table = Table::new(roll_gen);
-//            //let mut p = FieldMartingalePlayer::new(bank, 3000);
-//            let mut p = DGELay410MartingalePlayer::new(bank);
-//            p.attach_recorder(Box::new(RollRecorder::new()));
-//            p.attach_recorder(Box::new(BankrollRecorder::new()));
-//            table.add_player(Box::new(p));
-//            for _ in 0..num_rolls {
-//                let finished_players = table.loop_once();
-//                if !finished_players.is_empty() {
-//                    assert_eq!(finished_players.len(), 1);
-//                    return Ok(finished_players[0].recorder_output());
-//                }
-//            }
-//            let finished_players = table.done();
-//            assert_eq!(finished_players.len(), 1);
-//            Ok(finished_players[0].recorder_output())
-//        })
-//        // ignore errors
-//        .filter_map(|o| o.ok());
-//    let (snd, rcv): (_, Receiver<HashMap<&'static str, Value>>) = sync_channel(1);
-//    let handle = thread::spawn(move || {
-//        let mut label_fds = [
-//            (ROLL_RECORDER_LABEL, rolls_fd),
-//            (BANKROLL_RECORDER_LABEL, bank_fd),
-//        ];
-//        for output in rcv.iter() {
-//            for (label, fd) in label_fds.iter_mut() {
-//                if let Some(fd) = fd {
-//                    writeln!(fd, "{}", output[label]).unwrap();
-//                }
-//            }
-//        }
-//        for (label, fd) in label_fds.iter_mut() {
-//            if let Some(fd) = fd {
-//                fd.flush().unwrap();
-//            }
-//        }
-//    });
-//    results.for_each_with(snd, |s, output| {
-//        s.send(output).unwrap();
-//    });
-//    handle.join().unwrap();
-//    Ok(())
-//}
 
 fn parse_rolls(args: &ArgMatches) -> Result<(), ()> {
     // unwrap ok: clap should have complained

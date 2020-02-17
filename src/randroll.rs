@@ -6,22 +6,8 @@ use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, SerializeSeq, Serializer};
 
 pub trait RollGen {
-    fn gen(&self) -> Roll;
+    fn gen(&mut self) -> Option<Roll>;
 }
-
-macro_rules! impl_iterator {
-    ($MyType:ty) => {
-        impl Iterator for $MyType {
-            type Item = Roll;
-            fn next(&mut self) -> Option<Self::Item> {
-                Some(self.gen())
-            }
-        }
-    };
-}
-
-impl_iterator!(DieWeights);
-impl_iterator!(RollWeights);
 
 #[derive(Debug)]
 pub struct DieWeights {
@@ -107,12 +93,12 @@ impl DieWeights {
 }
 
 impl RollGen for DieWeights {
-    fn gen(&self) -> Roll {
+    fn gen(&mut self) -> Option<Roll> {
         let mut rng = thread_rng();
         let v = [1, 2, 3, 4, 5, 6];
         let d1 = v[self.dist1.sample(&mut rng)];
         let d2 = v[self.dist2.sample(&mut rng)];
-        Roll::new([d1, d2]).unwrap()
+        Some(Roll::new([d1, d2]).unwrap())
     }
 }
 
@@ -170,7 +156,7 @@ impl RollWeights {
 }
 
 impl RollGen for RollWeights {
-    fn gen(&self) -> Roll {
+    fn gen(&mut self) -> Option<Roll> {
         let mut rng = thread_rng();
         let v = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
         let v = v[self.dist.sample(&mut rng)];
@@ -180,7 +166,31 @@ impl RollGen for RollWeights {
         } else {
             rng.gen_range(v - 6, 7)
         };
-        Roll::new([d1, v - d1]).unwrap()
+        Some(Roll::new([d1, v - d1]).unwrap())
+    }
+}
+
+#[derive(Debug)]
+pub struct GivenRolls {
+    rolls: Vec<Roll>,
+    idx: usize,
+}
+
+impl GivenRolls {
+    pub fn new(rolls: Vec<Roll>) -> Self {
+        Self { rolls, idx: 0 }
+    }
+}
+
+impl RollGen for GivenRolls {
+    fn gen(&mut self) -> Option<Roll> {
+        if self.idx >= self.rolls.len() {
+            None
+        } else {
+            let r = self.rolls[self.idx];
+            self.idx += 1;
+            Some(r)
+        }
     }
 }
 

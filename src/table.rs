@@ -72,7 +72,7 @@ impl Table {
     }
 
     fn roll(&mut self) {
-        let r = self.roll_gen.gen();
+        let r = self.roll_gen.gen().unwrap();
         self.state.last_roll = Some(r);
     }
 
