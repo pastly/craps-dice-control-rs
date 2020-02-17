@@ -32,7 +32,7 @@ impl Table {
     }
 
     pub fn loop_once(&mut self) -> Result<(), PlayerError> {
-        assert!(self.players.len() > 0);
+        assert!(!self.players.is_empty());
         self.pre_roll()?;
         self.roll();
         self.post_roll();
