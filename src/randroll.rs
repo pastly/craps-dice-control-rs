@@ -202,17 +202,17 @@ mod dieweights_tests {
 
     #[test]
     fn always_same() {
-        let w = DieWeights::new_weights([1, 0, 0, 0, 0, 0]);
+        let mut w = DieWeights::new_weights([1, 0, 0, 0, 0, 0]);
         for _ in 0..1000 {
-            assert_eq!(w.gen(), Roll::new([1, 1]).unwrap());
+            assert_eq!(w.gen(), Some(Roll::new([1, 1]).unwrap()));
         }
     }
 
     #[test]
     fn always_valid() {
-        let w = DieWeights::new_fair();
+        let mut w = DieWeights::new_fair();
         for _ in 0..1000 {
-            let _ = w.gen();
+            assert!(w.gen().is_some());
         }
     }
 }
@@ -225,17 +225,17 @@ mod rollweights_tests {
 
     #[test]
     fn always_same() {
-        let w = RollWeights::new_weights([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        let mut w = RollWeights::new_weights([1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         for _ in 0..1000 {
-            assert_eq!(w.gen(), Roll::new([1, 1]).unwrap());
+            assert_eq!(w.gen(), Some(Roll::new([1, 1]).unwrap()));
         }
     }
 
     #[test]
     fn always_valid() {
-        let w = RollWeights::new_fair();
+        let mut w = RollWeights::new_fair();
         for _ in 0..1000 {
-            let _ = w.gen();
+            assert!(w.gen().is_some());
         }
     }
 }
