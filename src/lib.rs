@@ -6,5 +6,6 @@ pub mod dgeplayer;
 pub mod global;
 pub mod randroll;
 pub mod roll;
+pub mod rollcounts;
 pub mod rolliter;
 pub mod table;

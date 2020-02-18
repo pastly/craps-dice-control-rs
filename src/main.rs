@@ -3,6 +3,7 @@ use cdc2::global::conf_def;
 use cdc2::player::{BankrollRecorder, Player, BANKROLL_RECORDER_LABEL};
 use cdc2::randroll::{DieWeights, GivenRolls, RollGen, RollWeights};
 use cdc2::roll::Roll;
+use cdc2::rollcounts::RollCounts;
 use cdc2::rolliter::{die_weights_from_iter, roll_weights_from_iter, RollIter};
 use cdc2::table::Table;
 use clap::{arg_enum, crate_name, crate_version, App, Arg, ArgGroup, ArgMatches, SubCommand};
@@ -239,6 +240,48 @@ fn medrange(args: &ArgMatches) -> Result<(), ()> {
     iter.par_bridge()
         .for_each_with(snd, |s, i| s.send(serde_json::to_vec(&i).unwrap()).unwrap());
     handle.join().unwrap();
+    Ok(())
+}
+
+fn roll_stats(args: &ArgMatches) -> Result<(), ()> {
+    let in_fname = args.value_of("input").unwrap();
+    let out_fname = args.value_of("output").unwrap();
+    let in_fd = match OpenOptions::new().read(true).open(in_fname) {
+        Ok(fd) => BufReader::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for input: {}", in_fname, e);
+            return Err(());
+        }
+    };
+    let mut out_fd = match OpenOptions::new()
+        .truncate(true)
+        .write(true)
+        .create(true)
+        .open(out_fname)
+    {
+        Ok(fd) => BufWriter::new(fd),
+        Err(e) => {
+            eprintln!("Problem opening {} for output: {}", out_fname, e);
+            return Err(());
+        }
+    };
+    let mut lines = in_fd.lines();
+    while let Some(Ok(line)) = lines.next() {
+        let game: Vec<Roll> = match serde_json::from_str(&line) {
+            Err(e) => {
+                eprintln!("Error parsing rolls: {}", e);
+                return Err(());
+            }
+            Ok(v) => v,
+        };
+        let mut game_count = RollCounts::default();
+        for r in game.into_iter() {
+            game_count.add(r);
+        }
+        let bytes = serde_json::to_vec(&game_count).unwrap();
+        out_fd.write_all(&bytes[..]).unwrap();
+        out_fd.write_all(&[0x0a]).unwrap();
+    }
     Ok(())
 }
 
@@ -533,6 +576,22 @@ fn main() {
                         .default_value("rollweights"),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("rollstats")
+                .about("Input generated rolls and output stats about them")
+                .arg(
+                    Arg::with_name("input")
+                        .short("i")
+                        .long("input")
+                        .default_value("/dev/stdin"),
+                )
+                .arg(
+                    Arg::with_name("output")
+                        .short("o")
+                        .long("output")
+                        .default_value("/dev/stdout"),
+                ),
+        )
         .get_matches();
     let _config = args.value_of("config").unwrap();
     let _res = if let Some(args) = args.subcommand_matches("simulate") {
@@ -543,6 +602,8 @@ fn main() {
         gen_rolls(args)
     } else if let Some(args) = args.subcommand_matches("medrange") {
         medrange(args)
+    } else if let Some(args) = args.subcommand_matches("rollstats") {
+        roll_stats(args)
     } else if args.subcommand_name().is_none() {
         eprintln!("Must provide subcommand");
         Err(())
