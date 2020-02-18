@@ -265,23 +265,43 @@ fn roll_stats(args: &ArgMatches) -> Result<(), ()> {
             return Err(());
         }
     };
-    let mut lines = in_fd.lines();
-    while let Some(Ok(line)) = lines.next() {
-        let game: Vec<Roll> = match serde_json::from_str(&line) {
-            Err(e) => {
-                eprintln!("Error parsing rolls: {}", e);
-                return Err(());
+    let output = in_fd
+        .lines()
+        .par_bridge()
+        .map(|line| {
+            let line = match line {
+                Err(e) => {
+                    eprintln!("Error getting line from input: {}", e);
+                    return Err(());
+                }
+                Ok(ln) => ln,
+            };
+            let rolls: Vec<Roll> = match serde_json::from_str(&line) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("Error parsing line from input: {}", e);
+                    return Err(());
+                }
+            };
+            let mut counts = RollCounts::default();
+            for r in rolls.into_iter() {
+                counts.add(r);
             }
-            Ok(v) => v,
-        };
-        let mut game_count = RollCounts::default();
-        for r in game.into_iter() {
-            game_count.add(r);
+            Ok(serde_json::to_vec(&counts).unwrap())
+        })
+        .filter_map(|c| c.ok());
+    let (snd, rcv): (SyncSender<Vec<u8>>, _) = sync_channel(1);
+    let handle = thread::spawn(move || {
+        for bytes in rcv.iter() {
+            out_fd.write_all(&bytes[..]).unwrap();
+            out_fd.write_all(&[0x0a]).unwrap();
         }
-        let bytes = serde_json::to_vec(&game_count).unwrap();
-        out_fd.write_all(&bytes[..]).unwrap();
-        out_fd.write_all(&[0x0a]).unwrap();
-    }
+        out_fd.flush().unwrap();
+    });
+    output.for_each_with(snd, |s, o| {
+        s.send(o).unwrap();
+    });
+    handle.join().unwrap();
     Ok(())
 }
 

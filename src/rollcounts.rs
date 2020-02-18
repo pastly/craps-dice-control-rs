@@ -1,5 +1,5 @@
 use crate::roll::Roll;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct RollCounts {
