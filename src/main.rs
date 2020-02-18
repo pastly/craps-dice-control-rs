@@ -467,11 +467,11 @@ fn main() {
                 )
                 .arg(
                     Arg::with_name("bankroll")
-                    .long("bankroll")
-                    .default_value(conf_def::STARTING_BANKROLL)
-                    .validator(|v| validate_as!(u32, v))
-                    .help("Starting bankroll")
-                    ),
+                        .long("bankroll")
+                        .default_value(conf_def::STARTING_BANKROLL)
+                        .validator(|v| validate_as!(u32, v))
+                        .help("Starting bankroll"),
+                ),
         )
         .subcommand(
             SubCommand::with_name("genrolls")
